@@ -1,15 +1,15 @@
 package com.xnotes.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -18,12 +18,21 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.ToggleButton
+import androidx.compose.material3.ToggleButtonDefaults
+import androidx.compose.material3.ToggleButtonSize
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -31,6 +40,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.Layout
@@ -39,6 +49,9 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.xnotes.R
@@ -134,7 +147,7 @@ fun ToolbarCustomizerBody(
             }
         }
         if (draggingSection && sectionDropTarget == layout.sections.size) SectionCaret()
-        AddSectionChip(onClick = onAdd)
+        AddSectionButton(onClick = onAdd)
     }
 }
 
@@ -287,6 +300,7 @@ private fun SectionDragStrip(
     )
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun ChipCell(
     item: ToolbarItem,
@@ -299,48 +313,82 @@ private fun ChipCell(
     onCancel: () -> Unit,
     onBounds: (Rect) -> Unit,
 ) {
-    // The pointerInput blocks key on the stable item, so they capture the first-composition
-    // lambdas; rememberUpdatedState keeps the gestures calling the latest callbacks instead.
-    val tap by rememberUpdatedState(onTap)
+    // The drag detector keys on the stable item; rememberUpdatedState keeps it using current callbacks.
     val dStart by rememberUpdatedState(onDragStart)
     val dMove by rememberUpdatedState(onDrag)
     val dEnd by rememberUpdatedState(onDrop)
     val dCancel by rememberUpdatedState(onCancel)
-    ChipFace(
-        item = item,
-        visible = visible,
+    val targetBounds = remember(item) { mutableStateOf(Rect.Zero) }
+    val faceBounds = remember(item) { mutableStateOf(Rect.Zero) }
+    val label = stringResource(item.labelRes)
+    val palette = LocalPalette.current
+    ToggleButton(
+        checked = visible,
+        onCheckedChange = { onTap() },
+        buttonSize = ToggleButtonSize.ExtraSmall,
+        border = BorderStroke(1.dp, (if (visible) palette.accent else palette.border).toComposeColor()),
+        colors = ToggleButtonDefaults.colors(
+            containerColor = palette.surface.toComposeColor(),
+            contentColor = palette.text.toComposeColor(),
+            checkedContainerColor = palette.materialColors.secondaryContainer.toComposeColor(),
+            checkedContentColor = palette.materialColors.onSecondaryContainer.toComposeColor(),
+        ),
+        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
         modifier = Modifier
+            .minimumInteractiveComponentSize()
             .alpha(if (dragging) 0.15f else 1f)
-            .onGloballyPositioned { onBounds(it.boundsInRoot()) }
-            .pointerInput(item) { detectTapGestures(onTap = { tap() }) }
+            .onGloballyPositioned { targetBounds.value = it.boundsInRoot() }
+            .semantics { role = Role.Checkbox }
             .pointerInput(item) {
                 detectDragGesturesAfterLongPress(
-                    onDragStart = { dStart(it) },
+                    onDragStart = { local ->
+                        // Convert the expanded target's local point to the visible face's local point.
+                        val inset = faceBounds.value.topLeft - targetBounds.value.topLeft
+                        dStart(local - inset)
+                    },
                     onDrag = { _, delta -> dMove(delta) },
                     onDragEnd = { dEnd() },
                     onDragCancel = { dCancel() },
                 )
             },
-    )
+    ) {
+        Row(
+            Modifier.onGloballyPositioned {
+                val bounds = it.boundsInRoot()
+                faceBounds.value = bounds
+                onBounds(bounds)
+            },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(itemIcon(item), null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(4.dp))
+            Text(label, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+        }
+    }
 }
 
 /** The visual of a tool chip (icon + label, dimmed when hidden); shared by the bar editor and the
  *  section drag ghost so a lifted section looks exactly like its card. */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun ChipFace(item: ToolbarItem, visible: Boolean, modifier: Modifier = Modifier) {
     val palette = LocalPalette.current
+    val shapes = ToggleButtonDefaults.shapesFor(ToggleButtonSize.ExtraSmall)
+    val shape = if (visible) shapes.checkedShape else shapes.shape
+    val foreground = if (visible) palette.materialColors.onSecondaryContainer.toComposeColor() else palette.text.toComposeColor()
+    val background = if (visible) palette.materialColors.secondaryContainer.toComposeColor() else palette.surface.toComposeColor()
     Row(
         modifier
             .alpha(if (!visible) 0.4f else 1f)
-            .clip(MaterialTheme.shapes.small)
-            .background(palette.surface.toComposeColor())
-            .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.small)
+            .clip(shape)
+            .background(background)
+            .border(1.dp, (if (visible) palette.accent else palette.border).toComposeColor(), shape)
             .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(itemIcon(item), null, tint = palette.textDim.toComposeColor(), modifier = Modifier.size(14.dp))
+        Icon(itemIcon(item), null, tint = foreground, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(4.dp))
-        Text(stringResource(item.labelRes), color = palette.text.toComposeColor(), fontSize = 12.sp)
+        Text(stringResource(item.labelRes), color = foreground, style = MaterialTheme.typography.labelSmall)
     }
 }
 
@@ -404,19 +452,17 @@ fun SectionCardGhost(section: ToolbarSection, widthPx: Float) {
 }
 
 @Composable
-private fun AddSectionChip(onClick: () -> Unit) {
+private fun AddSectionButton(onClick: () -> Unit) {
     val palette = LocalPalette.current
-    Row(
-        Modifier
-            .clip(MaterialTheme.shapes.small)
-            .border(1.dp, palette.accent.toComposeColor(), MaterialTheme.shapes.small)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    val accent = palette.accent.toComposeColor()
+    OutlinedButton(
+        onClick = onClick,
+        border = BorderStroke(1.dp, accent),
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = accent),
     ) {
-        Icon(XnotesIcons.plus, stringResource(R.string.add_section), tint = palette.accent.toComposeColor(), modifier = Modifier.size(14.dp))
-        Spacer(Modifier.width(4.dp))
-        Text(stringResource(R.string.add_section), color = palette.accent.toComposeColor(), fontSize = 12.sp)
+        Icon(XnotesIcons.plus, null, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(stringResource(R.string.add_section))
     }
 }
 
@@ -449,6 +495,8 @@ private fun itemIcon(item: ToolbarItem): ImageVector = when (item) {
     ToolbarItem.SCREENSHOT -> XnotesIcons.scissors
     ToolbarItem.WAND -> XnotesIcons.magicWand
     ToolbarItem.SHAPE -> XnotesIcons.shape
+    ToolbarItem.MATH -> XnotesIcons.matrix
+    ToolbarItem.CUTE -> XnotesIcons.cuteLayout
     ToolbarItem.RULER -> XnotesIcons.ruler
     ToolbarItem.TEXT -> XnotesIcons.text
     ToolbarItem.TEXT_BOX -> XnotesIcons.textBox

@@ -1,11 +1,13 @@
 package com.xnotes.ui
 
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -13,10 +15,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.xnotes.core.model.PageSize
+import com.xnotes.ui.icons.XnotesIcons
 import com.xnotes.ui.theme.LocalPalette
 import com.xnotes.ui.theme.toComposeColor
 
@@ -26,19 +28,30 @@ internal fun SizeDropdown(size: PageSize?, unset: String? = null, onSelect: (Pag
     var expanded by remember { mutableStateOf(false) }
     val palette = LocalPalette.current
     Box {
-        Box(
-            Modifier
-                .clip(MaterialTheme.shapes.small)
-                .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.small)
-                .clickable { expanded = true }
-                .padding(horizontal = 12.dp, vertical = 6.dp),
+        OutlinedButton(
+            onClick = { expanded = true },
+            shape = MaterialTheme.shapes.small,
+            border = BorderStroke(1.dp, palette.border.toComposeColor()),
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
         ) {
-            Text(size?.let { pageSizeLabel(it) } ?: unset.orEmpty(), color = palette.text.toComposeColor(), fontSize = 14.sp)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(size?.let { pageSizeLabel(it) } ?: unset.orEmpty(), color = palette.text.toComposeColor(), fontSize = 14.sp)
+                Icon(XnotesIcons.chevronDown, null, tint = palette.textDim.toComposeColor())
+            }
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            if (unset != null) DropdownMenuItem(text = { Text(unset) }, onClick = { onSelect(null); expanded = false })
-            PageSize.entries.forEach { s ->
-                DropdownMenuItem(text = { Text(pageSizeLabel(s)) }, onClick = { onSelect(s); expanded = false })
+            val options = buildList<Pair<PageSize?, String>> {
+                if (unset != null) add(null to unset)
+                PageSize.entries.forEach { add(it to pageSizeLabel(it)) }
+            }
+            options.forEachIndexed { index, (value, label) ->
+                ExpressiveChoiceMenuItem(
+                    selected = size == value,
+                    onClick = { onSelect(value); expanded = false },
+                    shapeIndex = index,
+                    shapeCount = options.size,
+                    text = { color -> Text(label, color = color, fontSize = 14.sp) },
+                )
             }
         }
     }

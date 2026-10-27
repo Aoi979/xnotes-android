@@ -13,18 +13,37 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuAnchorPosition
+import androidx.compose.material3.MenuDefaults
+import androidx.compose.material3.OutlinedIconButton
+import androidx.compose.material3.SelectableDropdownMenuItem
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.ToggleButton
+import androidx.compose.material3.ToggleButtonDefaults
+import androidx.compose.material3.ToggleButtonSize
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -38,6 +57,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -138,7 +161,7 @@ fun ToolConfigPopup(editor: ToolPopupHost, tool: Tool, onDismiss: () -> Unit) {
             // this tool to it regardless of the toolbar selection.
             StyleCaption(stringResource(R.string.caption_colour))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                ModeChip(stringResource(R.string.default_choice), colorOverride == null) { colorOverride = null; emit() }
+                ModeChoiceButton(stringResource(R.string.default_choice), colorOverride == null) { colorOverride = null; emit() }
                 ColorPickerDot(
                     colorOverride,
                     custom = colorOverride != null,
@@ -240,10 +263,14 @@ fun StylesPopup(editor: Editor, onImportTemplate: () -> Unit = {}, onDismiss: ()
             TemplateCustomizer(editor, shown, shownKey, tab, style, lower, look, ::apply) { customizing = false }
         } else Column(Modifier.width(286.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
             PopupTitle(stringResource(R.string.title_styles))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                ModeChip(stringResource(R.string.all_pages), tab == 0) { tab = 0 }
-                ModeChip(stringResource(R.string.current_page), tab == 1) { tab = 1 }
-            }
+            ExpressiveChoiceGroup(
+                options = listOf(
+                    0 to stringResource(R.string.all_pages),
+                    1 to stringResource(R.string.current_page),
+                ),
+                selected = tab,
+                onSelect = { tab = it },
+            )
 
             Spacer(Modifier.size(12.dp))
             StyleCaption(stringResource(R.string.caption_page_colour))
@@ -251,20 +278,21 @@ fun StylesPopup(editor: Editor, onImportTemplate: () -> Unit = {}, onDismiss: ()
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                ModeChip(stringResource(R.string.default_choice), style.pageColor == null) { apply(style.copy(pageColor = null)) }
+                ModeChoiceButton(stringResource(R.string.default_choice), style.pageColor == null) { apply(style.copy(pageColor = null)) }
                 SwatchCircles(editor, SwatchRole.PAPER, style.pageColor) { apply(style.copy(pageColor = it)) }
             }
 
             Spacer(Modifier.size(12.dp))
             StyleCaption(stringResource(R.string.caption_template))
             FlowRow(
+                modifier = Modifier.selectableGroup(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 // With nothing below All Pages, an unset template there already means None.
-                if (tab == 1) ModeChip(stringResource(R.string.default_choice), style.template == null) { apply(style.withTemplate(null, inherited)) }
+                if (tab == 1) ModeChoiceButton(stringResource(R.string.default_choice), style.template == null) { apply(style.withTemplate(null, inherited)) }
                 val none = style.template == PageTemplates.NONE || (tab == 0 && style.template == null)
-                ModeChip(stringResource(R.string.none), none) { apply(style.withTemplate(PageTemplates.NONE, inherited)) }
+                ModeChoiceButton(stringResource(R.string.none), none) { apply(style.withTemplate(PageTemplates.NONE, inherited)) }
             }
             Spacer(Modifier.size(6.dp))
             val libraryVersion = TemplateLibraryUi.version
@@ -297,7 +325,7 @@ fun StylesPopup(editor: Editor, onImportTemplate: () -> Unit = {}, onDismiss: ()
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f).padding(end = 8.dp),
                     )
-                    ModeChip(stringResource(R.string.customize), false) { customizing = true }
+                    TextButton(onClick = { customizing = true }) { Text(stringResource(R.string.customize)) }
                 }
             }
 
@@ -321,7 +349,7 @@ fun StylesPopup(editor: Editor, onImportTemplate: () -> Unit = {}, onDismiss: ()
                     Spacer(Modifier.size(4.dp))
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    ModeChip(stringResource(R.string.reset), false) { apply(PageStyle()) }
+                    TextButton(onClick = { apply(PageStyle()) }) { Text(stringResource(R.string.reset)) }
                 }
             }
 
@@ -361,14 +389,14 @@ private fun NewPageSizeControls(editor: Editor) {
                 }
             }
         } else {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                ModeChip(stringResource(R.string.orientation_portrait), c.orientation == Orientation.PORTRAIT) {
-                    apply(c.copy(orientation = Orientation.PORTRAIT))
-                }
-                ModeChip(stringResource(R.string.orientation_landscape), c.orientation == Orientation.LANDSCAPE) {
-                    apply(c.copy(orientation = Orientation.LANDSCAPE))
-                }
-            }
+            ExpressiveChoiceGroup(
+                options = listOf(
+                    Orientation.PORTRAIT to stringResource(R.string.orientation_portrait),
+                    Orientation.LANDSCAPE to stringResource(R.string.orientation_landscape),
+                ),
+                selected = c.orientation,
+                onSelect = { apply(c.copy(orientation = it)) },
+            )
         }
     }
 }
@@ -452,7 +480,7 @@ private fun TemplateCustomizer(
             StyleCaption(stringResource(R.string.caption_pattern_colour))
             Spacer(Modifier.size(4.dp))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                ModeChip(stringResource(R.string.default_choice), style.patternColor == null) { apply(style.copy(patternColor = null)) }
+                ModeChoiceButton(stringResource(R.string.default_choice), style.patternColor == null) { apply(style.copy(patternColor = null)) }
                 // Circles hold the hue at full strength; OPACITY sets the alpha, so a pick keeps it.
                 SwatchCircles(editor, SwatchRole.LINES, style.patternColor?.copy(a = 255)) {
                     apply(style.copy(patternColor = it.copy(a = look.ink.a)))
@@ -474,7 +502,7 @@ private fun TemplateCustomizer(
             StyleCaption(stringResource(R.string.caption_accent_colour))
             Spacer(Modifier.size(4.dp))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                ModeChip(stringResource(R.string.default_choice), style.accentColor == null) { apply(style.copy(accentColor = null)) }
+                ModeChoiceButton(stringResource(R.string.default_choice), style.accentColor == null) { apply(style.copy(accentColor = null)) }
                 SwatchCircles(editor, SwatchRole.ACCENT, style.accentColor?.copy(a = 255)) {
                     apply(style.copy(accentColor = it.copy(a = look.accent.a)))
                 }
@@ -485,9 +513,9 @@ private fun TemplateCustomizer(
 
         Spacer(Modifier.size(12.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            ModeChip(stringResource(R.string.reset), false) {
+            TextButton(onClick = {
                 apply(style.copy(patternColor = null, accentColor = null, spacing = null, params = null, colors = null))
-            }
+            }) { Text(stringResource(R.string.reset)) }
         }
     }
 }
@@ -524,25 +552,26 @@ fun MarginsPopup(editor: Editor, onDismiss: () -> Unit) {
     DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
         Column(Modifier.width(286.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
             PopupTitle(stringResource(R.string.title_margins))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                ModeChip(stringResource(R.string.all_pages), tab == 0) { tab = 0 }
-                ModeChip(stringResource(R.string.current_page), tab == 1) { tab = 1 }
-            }
+            ExpressiveChoiceGroup(
+                options = listOf(
+                    0 to stringResource(R.string.all_pages),
+                    1 to stringResource(R.string.current_page),
+                ),
+                selected = tab,
+                onSelect = { tab = it },
+            )
 
             Spacer(Modifier.size(12.dp))
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                PageEdge.entries.forEach { e ->
-                    ModeChip(stringResource(e.labelRes), edge == e) { edge = e }
-                }
-            }
+            ExpressiveChoiceGroup(
+                options = PageEdge.entries.map { it to stringResource(it.labelRes) },
+                selected = edge,
+                onSelect = { edge = it },
+            )
 
             Spacer(Modifier.size(12.dp))
             StyleCaption(stringResource(R.string.caption_value_percent, stringResource(edge.labelRes), percent.roundToInt()) + if (own == null) stringResource(R.string.default_suffix) else "")
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ModeChip(stringResource(R.string.default_choice), own == null) { apply(margins.withEdge(edge, null)) }
+                ModeChoiceButton(stringResource(R.string.default_choice), own == null) { apply(margins.withEdge(edge, null)) }
                 Slider(
                     value = percent,
                     onValueChange = { apply(margins.withEdge(edge, it.toDouble() / 100.0)) },
@@ -553,7 +582,7 @@ fun MarginsPopup(editor: Editor, onDismiss: () -> Unit) {
 
             Spacer(Modifier.size(8.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                ModeChip(stringResource(R.string.reset), false) { apply(PageMargins()) }
+                TextButton(onClick = { apply(PageMargins()) }) { Text(stringResource(R.string.reset)) }
             }
         }
     }
@@ -586,7 +615,7 @@ internal fun TemplateParamControls(
         val label = sp.label ?: stringResource(R.string.caption_spacing)
         StyleCaption("$label  ${"%.1f mm".format(spacing / k)}" + if (style.spacing == null) stringResource(R.string.default_suffix) else "")
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            ModeChip(stringResource(R.string.default_choice), style.spacing == null) { apply(style.copy(spacing = null)) }
+            ModeChoiceButton(stringResource(R.string.default_choice), style.spacing == null) { apply(style.copy(spacing = null)) }
             Slider(
                 value = spacing.toFloat().coerceIn(lo, hi),
                 onValueChange = { apply(style.copy(spacing = it.toDouble())) },
@@ -604,7 +633,7 @@ internal fun TemplateParamControls(
             StyleCaption(label)
             Spacer(Modifier.size(captionGap))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                ModeChip(stringResource(R.string.default_choice), own == null) {
+                ModeChoiceButton(stringResource(R.string.default_choice), own == null) {
                     apply(style.copy(colors = style.colors?.minus(p.name)?.takeIf { it.isNotEmpty() }))
                 }
                 SwatchCircles(store, SwatchRole.TEMPLATE, own) {
@@ -624,7 +653,7 @@ internal fun TemplateParamControls(
         }
         StyleCaption("$label  $shown" + if (own == null) stringResource(R.string.default_suffix) else "")
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            ModeChip(stringResource(R.string.default_choice), own == null) {
+            ModeChoiceButton(stringResource(R.string.default_choice), own == null) {
                 apply(style.copy(params = style.params?.minus(p.name)?.takeIf { it.isNotEmpty() }))
             }
             val integer = p.type == com.xnotes.core.template.ParamType.INTEGER
@@ -687,11 +716,15 @@ fun ViewMenuPopup(editor: Editor, onDismiss: () -> Unit) {
         Column(Modifier.width(300.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
             PopupTitle(stringResource(R.string.title_view))
             StyleCaption(stringResource(R.string.caption_viewing_mode))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                ModeChip(stringResource(R.string.view_single), vs.mode == ViewingMode.SINGLE) { setMode(ViewingMode.SINGLE) }
-                ModeChip(stringResource(R.string.view_double), vs.mode == ViewingMode.DOUBLE) { setMode(ViewingMode.DOUBLE) }
-                ModeChip(stringResource(R.string.view_cover), vs.mode == ViewingMode.COVER) { setMode(ViewingMode.COVER) }
-            }
+            ExpressiveChoiceGroup(
+                options = listOf(
+                    ViewingMode.SINGLE to stringResource(R.string.view_single),
+                    ViewingMode.DOUBLE to stringResource(R.string.view_double),
+                    ViewingMode.COVER to stringResource(R.string.view_cover),
+                ),
+                selected = vs.mode,
+                onSelect = ::setMode,
+            )
 
             Spacer(Modifier.size(10.dp))
             ToggleRow(stringResource(R.string.caption_vertical_scrolling), vs.verticalScroll) { setVerticalScroll(it) }
@@ -739,7 +772,7 @@ fun ViewMenuPopup(editor: Editor, onDismiss: () -> Unit) {
                 Spacer(Modifier.size(4.dp))
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                ModeChip(stringResource(R.string.reset), false) { apply(ViewOverrides()) }
+                TextButton(onClick = { apply(ViewOverrides()) }) { Text(stringResource(R.string.reset)) }
             }
         }
     }
@@ -751,8 +784,12 @@ private fun FilterSpinRow(label: String, value: Int, min: Int, max: Int, onChang
     val palette = LocalPalette.current
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(label, color = palette.textDim.toComposeColor(), fontSize = 13.sp, modifier = Modifier.width(84.dp))
-        Box(Modifier.size(34.dp).clickable { onChange((value - 5).coerceIn(min, max)) }, contentAlignment = Alignment.Center) {
-            Text("−", color = palette.text.toComposeColor(), fontSize = 18.sp)
+        IconButton(onClick = { onChange((value - 5).coerceIn(min, max)) }) {
+            Icon(
+                Icons.Filled.Remove,
+                contentDescription = stringResource(R.string.decrease_value, label),
+                tint = palette.text.toComposeColor(),
+            )
         }
         Text(
             "$value%",
@@ -761,8 +798,12 @@ private fun FilterSpinRow(label: String, value: Int, min: Int, max: Int, onChang
             textAlign = TextAlign.Center,
             modifier = Modifier.width(46.dp),
         )
-        Box(Modifier.size(34.dp).clickable { onChange((value + 5).coerceIn(min, max)) }, contentAlignment = Alignment.Center) {
-            Text("+", color = palette.text.toComposeColor(), fontSize = 18.sp)
+        IconButton(onClick = { onChange((value + 5).coerceIn(min, max)) }) {
+            Icon(
+                Icons.Filled.Add,
+                contentDescription = stringResource(R.string.increase_value, label),
+                tint = palette.text.toComposeColor(),
+            )
         }
     }
 }
@@ -785,7 +826,7 @@ private fun FilterColorRow(label: String, value: Rgba, off: Rgba, onChange: (Rgb
             dismissOnPick = false,
         ) { d, p -> PageColorGridPopup(value, d, p) }
         Spacer(Modifier.size(8.dp))
-        ModeChip(stringResource(R.string.off), !on) { onChange(off) }
+        ModeChoiceButton(stringResource(R.string.off), !on) { onChange(off) }
     }
 }
 
@@ -819,7 +860,7 @@ fun PageJumpPopup(editor: Editor, onDismiss: () -> Unit) {
                     color = LocalPalette.current.textDim.toComposeColor(),
                     fontSize = 13.sp,
                 )
-                ModeChip(stringResource(R.string.go), selected = true) { go() }
+                Button(onClick = { go() }) { Text(stringResource(R.string.go)) }
             }
         }
     }
@@ -858,6 +899,7 @@ fun ZoomMenuPopup(editor: Editor, onDismiss: () -> Unit) {
                     emit()
                 },
             )
+            HorizontalDivider(Modifier.padding(vertical = 4.dp), color = LocalPalette.current.border.toComposeColor())
             ZoomLimitRow(
                 stringResource(R.string.caption_max_zoom), maxOn, maxPct,
                 onToggle = {
@@ -879,24 +921,53 @@ fun ZoomMenuPopup(editor: Editor, onDismiss: () -> Unit) {
 @Composable
 private fun ZoomLimitRow(label: String, enabled: Boolean, value: Int, onToggle: (Boolean) -> Unit, onValue: (Int) -> Unit) {
     val palette = LocalPalette.current
-    val color = (if (enabled) palette.text else palette.textDim).toComposeColor()
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(label, color = color, fontSize = 12.sp, modifier = Modifier.width(76.dp))
-        Box(Modifier.size(34.dp).clickable(enabled = enabled) { onValue(value - 10) }, contentAlignment = Alignment.Center) {
-            Text("−", color = color, fontSize = 18.sp)
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(label, color = palette.text.toComposeColor(), style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+            Switch(checked = enabled, onCheckedChange = onToggle)
         }
-        Text(
-            "$value%",
-            color = color,
-            fontSize = 13.sp,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.width(52.dp),
-        )
-        Box(Modifier.size(34.dp).clickable(enabled = enabled) { onValue(value + 10) }, contentAlignment = Alignment.Center) {
-            Text("+", color = color, fontSize = 18.sp)
+        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+            ZoomStepButton(
+                icon = XnotesIcons.minus,
+                description = stringResource(R.string.decrease_value, label),
+                enabled = enabled && value > Preferences.ZOOM_LIMIT_MIN_PCT,
+            ) { onValue(value - 10) }
+            Text(
+                "$value%",
+                color = (if (enabled) palette.text else palette.textDim).toComposeColor(),
+                style = MaterialTheme.typography.titleMedium,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.width(64.dp),
+            )
+            ZoomStepButton(
+                icon = XnotesIcons.plus,
+                description = stringResource(R.string.increase_value, label),
+                enabled = enabled && value < Preferences.ZOOM_LIMIT_MAX_PCT,
+            ) { onValue(value + 10) }
         }
-        Spacer(Modifier.weight(1f))
-        Switch(checked = enabled, onCheckedChange = onToggle)
+    }
+}
+
+@Composable
+private fun ZoomStepButton(icon: ImageVector, description: String, enabled: Boolean, onClick: () -> Unit) {
+    val palette = LocalPalette.current
+    Tooltip(description) {
+        OutlinedIconButton(
+            onClick = onClick,
+            enabled = enabled,
+            modifier = Modifier.size(40.dp),
+            colors = IconButtonDefaults.outlinedIconButtonColors(
+                containerColor = Color.Transparent,
+                contentColor = palette.text.toComposeColor(),
+                disabledContentColor = palette.textDim.toComposeColor(),
+            ),
+            border = BorderStroke(
+                1.dp,
+                palette.border.toComposeColor().copy(alpha = if (enabled) 1f else 0.38f),
+            ),
+        ) {
+            Icon(icon, contentDescription = description, modifier = Modifier.size(18.dp))
+        }
     }
 }
 
@@ -926,10 +997,14 @@ fun EraserConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
     DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
         Column(Modifier.width(250.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
             PopupTitle(stringResource(R.string.title_eraser))
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                ModeChip(stringResource(R.string.eraser_stroke), selected = !area) { area = false; emit() }
-                ModeChip(stringResource(R.string.eraser_area), selected = area) { area = true; emit() }
-            }
+            ExpressiveChoiceGroup(
+                options = listOf(
+                    false to stringResource(R.string.eraser_stroke),
+                    true to stringResource(R.string.eraser_area),
+                ),
+                selected = area,
+                onSelect = { area = it; emit() },
+            )
             val r = ToolConversions.widthRange(Tool.ERASER)
             SliderRow(stringResource(R.string.caption_size), size, r.start.toFloat()..r.endInclusive.toFloat()) { size = it; emit() }
             // SCALE off: the eraser holds a constant on-screen size whatever zoom you are at.
@@ -977,9 +1052,9 @@ fun MarkupToolPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
     DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
         Column(Modifier.width(250.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
             PopupTitle(stringResource(R.string.tool_markup))
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(Modifier.selectableGroup(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 MarkupMode.entries.forEach { m ->
-                    KindChip(markupIcon(m), stringResource(m.labelRes), selected = mode == m) { mode = m; emit() }
+                    IconChoiceButton(markupIcon(m), stringResource(m.labelRes), selected = mode == m) { mode = m; emit() }
                 }
             }
             if (mode == MarkupMode.HIGHLIGHT) {
@@ -1015,9 +1090,8 @@ fun ColorSwitcherPopup(host: ToolPopupHost, index: Int, onDismiss: () -> Unit) {
 internal fun PopupTitle(text: String) {
     Text(
         text,
-        color = LocalPalette.current.accent.toComposeColor(),
-        fontWeight = FontWeight.Medium,
-        fontSize = 14.sp,
+        color = LocalPalette.current.text.toComposeColor(),
+        style = MaterialTheme.typography.titleSmall,
         modifier = Modifier.padding(vertical = 4.dp),
     )
 }
@@ -1057,23 +1131,29 @@ internal fun SliderRow(
 
 
 @Composable
-internal fun KindChip(icon: ImageVector, label: String, selected: Boolean, onClick: () -> Unit) {
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+internal fun IconChoiceButton(icon: ImageVector, label: String, selected: Boolean, onClick: () -> Unit) {
     val palette = LocalPalette.current
     Tooltip(label) {
-        Box(
-            Modifier
-                .clip(MaterialTheme.shapes.extraSmall)
-                .background(if (selected) palette.selectionBackground.toComposeColor() else palette.surface.toComposeColor())
-                .border(1.dp, if (selected) palette.accent.toComposeColor() else palette.border.toComposeColor(), MaterialTheme.shapes.extraSmall)
-                .clickable(onClick = onClick)
-                .padding(8.dp),
+        ToggleButton(
+            checked = selected,
+            onCheckedChange = { checked -> if (checked) onClick() },
+            modifier = Modifier
+                .minimumInteractiveComponentSize()
+                .semantics { role = Role.RadioButton },
+            buttonSize = ToggleButtonSize.ExtraSmall,
+            border = BorderStroke(
+                1.dp,
+                (if (selected) palette.accent else palette.border).toComposeColor(),
+            ),
+            colors = ToggleButtonDefaults.colors(
+                containerColor = palette.surface.toComposeColor(),
+                contentColor = palette.text.toComposeColor(),
+                checkedContainerColor = palette.selectionBackground.toComposeColor(),
+                checkedContentColor = palette.selectionForeground.toComposeColor(),
+            ),
         ) {
-            Icon(
-                icon,
-                contentDescription = label,
-                tint = if (selected) palette.selectionForeground.toComposeColor() else palette.text.toComposeColor(),
-                modifier = Modifier.size(20.dp),
-            )
+            Icon(icon, contentDescription = label, modifier = Modifier.size(20.dp))
         }
     }
 }
@@ -1108,6 +1188,36 @@ internal fun DropdownMenu(
 }
 
 /**
+ * A menu made from M3 Expressive groups. Groups draw their own surfaces, so they belong in
+ * DropdownMenuPopup rather than inside DropdownMenu's separate outer surface.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+internal fun GroupedDropdownMenu(
+    expanded: Boolean,
+    onDismissRequest: () -> Unit,
+    modifier: Modifier = Modifier,
+    properties: PopupProperties = PopupProperties(focusable = true),
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    androidx.compose.material3.DropdownMenuPopup(
+        expanded = expanded,
+        onDismissRequest = onDismissRequest,
+        modifier = modifier,
+        popupPositionProvider = MenuDefaults.rememberDropdownMenuPopupPositionProvider(
+            MenuAnchorPosition.Below,
+            LocalMenuOffset.current,
+        ),
+        properties = properties,
+    ) {
+        // A nested menu or tip anchors to its own row, not beside the rail.
+        CompositionLocalProvider(LocalMenuOffset provides DpOffset.Zero, LocalTipSide provides TipSide.BELOW) {
+            content()
+        }
+    }
+}
+
+/**
  * The app's dialog: material's, pinned to the palette menu surface and given the same hairline
  * border and 14dp corners the hand-rolled progress dialogs use, so a dialog reads against
  * same-tone surfaces (the backstage, OLED black) and matches the menus. Shadows material3's
@@ -1136,42 +1246,89 @@ internal fun AlertDialog(
     )
 }
 
-/** A text-label chip for a segmented picker (e.g. the eraser's STROKE/AREA modes). */
-/** A menu row for one of several choices; the current one wears the selection container. */
+/** A single-select menu option styled and exposed with M3 Expressive selection semantics. */
 @Composable
 internal fun ChoiceMenuItem(
     selected: Boolean,
     onClick: () -> Unit,
+    shapeIndex: Int,
+    shapeCount: Int,
+    trailingIcon: (@Composable (Color) -> Unit)? = null,
+    text: @Composable (Color) -> Unit,
+) {
+    ExpressiveChoiceMenuItem(
+        selected = selected,
+        onClick = onClick,
+        shapeIndex = shapeIndex,
+        shapeCount = shapeCount,
+        trailingIcon = trailingIcon,
+        text = text,
+    )
+}
+
+/** An M3 Expressive choice row for a mutually exclusive option list. */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+internal fun ExpressiveChoiceMenuItem(
+    selected: Boolean,
+    onClick: () -> Unit,
+    shapeIndex: Int,
+    shapeCount: Int,
     trailingIcon: (@Composable (Color) -> Unit)? = null,
     text: @Composable (Color) -> Unit,
 ) {
     val palette = LocalPalette.current
     val fg = (if (selected) palette.selectionForeground else palette.text).toComposeColor()
-    DropdownMenuItem(
-        text = { text(fg) },
+    SelectableDropdownMenuItem(
+        selected = selected,
         onClick = onClick,
-        trailingIcon = trailingIcon?.let { icon -> { icon(fg) } },
-        modifier = if (selected) Modifier.background(palette.selectionBackground.toComposeColor()) else Modifier,
+        text = { text(fg) },
+        shapes = MenuDefaults.itemShape(shapeIndex, shapeCount),
+        colors = MenuDefaults.selectableItemColors(
+            textColor = palette.text.toComposeColor(),
+            containerColor = Color.Transparent,
+            trailingContentColor = palette.text.toComposeColor(),
+            selectedTextColor = palette.selectionForeground.toComposeColor(),
+            selectedContainerColor = palette.selectionBackground.toComposeColor(),
+            selectedTrailingContentColor = palette.selectionForeground.toComposeColor(),
+        ),
+        trailingContent = trailingIcon?.let { icon -> { icon(fg) } },
     )
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-internal fun ModeChip(label: String, selected: Boolean, onClick: () -> Unit) {
+internal fun ModeChoiceButton(
+    label: String,
+    selected: Boolean,
+    accessibilityLabel: String? = null,
+    onClick: () -> Unit,
+) {
     val palette = LocalPalette.current
-    Box(
-        Modifier
-            .clip(MaterialTheme.shapes.extraSmall)
-            .background(if (selected) palette.selectionBackground.toComposeColor() else palette.surface.toComposeColor())
-            .border(1.dp, if (selected) palette.accent.toComposeColor() else palette.border.toComposeColor(), MaterialTheme.shapes.extraSmall)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 6.dp),
+    ToggleButton(
+        checked = selected,
+        onCheckedChange = { checked ->
+            if (checked) onClick()
+        },
+        modifier = Modifier
+            .minimumInteractiveComponentSize()
+            .semantics {
+                role = Role.RadioButton
+                accessibilityLabel?.let { contentDescription = it }
+            },
+        buttonSize = ToggleButtonSize.ExtraSmall,
+        border = BorderStroke(
+            1.dp,
+            (if (selected) palette.accent else palette.border).toComposeColor(),
+        ),
+        colors = ToggleButtonDefaults.colors(
+            containerColor = palette.surface.toComposeColor(),
+            contentColor = palette.text.toComposeColor(),
+            checkedContainerColor = palette.selectionBackground.toComposeColor(),
+            checkedContentColor = palette.selectionForeground.toComposeColor(),
+        ),
     ) {
-        Text(
-            label,
-            color = if (selected) palette.selectionForeground.toComposeColor() else palette.text.toComposeColor(),
-            fontWeight = FontWeight.Medium,
-            fontSize = 12.sp,
-        )
+        Text(label, style = MaterialTheme.typography.labelMedium)
     }
 }
 
@@ -1188,15 +1345,26 @@ fun FontMenuItems(
     withDefault: Boolean = false,
     onPick: (FontFace?) -> Unit,
 ) {
-    val palette = LocalPalette.current
+    val choices = FontCatalog.choices().filter { !monoOnly || it.mono }
+    val leadingOffset = if (withDefault) 1 else 0
+    val shapeCount = choices.size + leadingOffset
     if (withDefault) {
-        ChoiceMenuItem(current == null, onClick = { onPick(null) }) { fg ->
+        ChoiceMenuItem(
+            selected = current == null,
+            onClick = { onPick(null) },
+            shapeIndex = 0,
+            shapeCount = shapeCount,
+        ) { fg ->
             Text(stringResource(R.string.default_choice), color = fg, fontSize = 14.sp)
         }
     }
-    for (choice in FontCatalog.choices()) {
-        if (monoOnly && !choice.mono) continue
-        ChoiceMenuItem(choice.face == current, onClick = { onPick(choice.face) }) { fg ->
+    choices.forEachIndexed { index, choice ->
+        ChoiceMenuItem(
+            selected = choice.face == current,
+            onClick = { onPick(choice.face) },
+            shapeIndex = index + leadingOffset,
+            shapeCount = shapeCount,
+        ) { fg ->
             Text(fontLabel(choice.face), color = fg, style = TextStyle(fontFamily = choice.face.toComposeFamily(), fontSize = 14.sp))
         }
     }

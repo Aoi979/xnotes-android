@@ -2,10 +2,13 @@ package com.xnotes.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.Crossfade
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
@@ -57,22 +60,38 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DropdownMenuGroup
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.FloatingActionButtonMenu
+import androidx.compose.material3.FloatingActionButtonMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationDrawerItem
+import androidx.compose.material3.NavigationDrawerItemDefaults
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
+import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.ToggleFloatingActionButton
+import androidx.compose.material3.ToggleFloatingActionButtonDefaults.animateIcon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -91,6 +110,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -113,6 +133,9 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -210,6 +233,7 @@ fun Backstage(
     onImportTemplate: () -> Unit = {},
     /** The New note screen asked to make a cover or page template from a picture. */
     onTemplateFromImage: (com.xnotes.core.template.TemplateKind) -> Unit = {},
+    modifier: Modifier = Modifier,
 ) {
     // Below this width the sidebar becomes a slide-over drawer instead of a persistent pane.
     val compact = LocalConfiguration.current.screenWidthDp < COMPACT_WIDTH_DP
@@ -230,7 +254,7 @@ fun Backstage(
     )
     // The backstage is the root of the stack — ordinary base content, not a dialog. The activity
     // window already runs edge-to-edge with the system bars hidden (MainActivity.applyFullscreen).
-    BackstageContent(editor, compact, view, onSelectView, calls, onExitApp, onImportCodeTheme, onImportFont)
+    BackstageContent(editor, compact, view, onSelectView, calls, onExitApp, onImportCodeTheme, onImportFont, modifier)
 }
 
 /** Width at or above which the sidebar is a persistent pane rather than a drawer. */
@@ -259,11 +283,18 @@ private fun BackstageContent(
     onExitApp: () -> Unit,
     onImportCodeTheme: () -> Unit,
     onImportFont: () -> Unit,
+    modifier: Modifier,
 ) {
     val palette = LocalPalette.current
     var createMode by remember { mutableStateOf(CreateMode.NONE) }
     var drawerOpen by remember { mutableStateOf(false) }
     val railed = editor.backstageRail
+    var settledRailed by remember { mutableStateOf(railed) }
+    val screenWidth = LocalConfiguration.current.screenWidthDp.dp
+    // Use the pane's settled width for grid sizing. The sidebar animates by resizing the pane, but
+    // the grid should only choose new columns once that spatial transition has finished.
+    val sidebarWidth = if (compact) 0.dp else if (settledRailed) RAIL_WIDTH else SIDEBAR_WIDTH
+    val explorerWidth = (screenWidth - sidebarWidth - PANE_GUTTER * 2).coerceAtLeast(0.dp)
     val prefs = remember(editor.prefsVersion) { editor.preferences }
     // Close animates only on a true dismiss (scrim, back); a command swaps the pane already composed
     // underneath, so it closes instantly.
@@ -340,33 +371,38 @@ private fun BackstageContent(
     }
 
     if (compact) {
-        Box(Modifier.fillMaxSize().background(palette.bg.toComposeColor())) {
+        Box(modifier.fillMaxSize().background(palette.bg.toComposeColor())) {
             BackstageMain(
                 Modifier.fillMaxSize(), editor, view, compact, drawerOpen, { animateClose = true; drawerOpen = true }, { selectView(BackstageView.HOME) },
-                calls, createMode, { createMode = it }, onImportCodeTheme, onImportFont, link, { selectView(BackstageView.PREFERENCES) },
+                calls, createMode, { createMode = it }, onImportCodeTheme, onImportFont, link, { selectView(BackstageView.PREFERENCES) }, explorerWidth,
             )
             AnimatedVisibility(
                 visible = drawerOpen,
-                enter = fadeIn(animationSpec = tween(SIDEBAR_ANIM_MS)),
-                exit = if (animateClose) fadeOut(animationSpec = tween(SIDEBAR_ANIM_MS)) else ExitTransition.None,
+                enter = fadeIn(animationSpec = XnotesMotion.defaultEffectsSpec()),
+                exit = if (animateClose) fadeOut(animationSpec = XnotesMotion.defaultEffectsSpec()) else ExitTransition.None,
                 modifier = Modifier.fillMaxSize(),
             ) {
                 Box(Modifier.fillMaxSize().background(palette.materialColors.scrim.withAlpha(82).toComposeColor()).clickable { dismissDrawer() })
             }
             AnimatedVisibility(
                 visible = drawerOpen,
-                enter = slideInHorizontally(animationSpec = tween(SIDEBAR_ANIM_MS), initialOffsetX = { -it }),
-                exit = if (animateClose) slideOutHorizontally(animationSpec = tween(SIDEBAR_ANIM_MS), targetOffsetX = { -it }) else ExitTransition.None,
+                enter = slideInHorizontally(animationSpec = XnotesMotion.defaultSpatialSpec(), initialOffsetX = { -it }),
+                exit = if (animateClose) slideOutHorizontally(animationSpec = XnotesMotion.defaultSpatialSpec(), targetOffsetX = { -it }) else ExitTransition.None,
             ) {
                 BackstageSidebar(Modifier.width(DRAWER_WIDTH), nav, dismissDrawer)
             }
         }
     } else {
         // Expanding pushes the explorer along with the panel; collapsing hands it the room at once and the panel
-        // folds away over it, as the old sidebar did, since resizing the grid on every frame is what a fold costs.
-        // The width is read only in layout, so neither direction recomposes anything.
-        val width = animateDpAsState(if (railed) RAIL_WIDTH else SIDEBAR_WIDTH, tween(SIDEBAR_ANIM_MS), label = "sidebarWidth")
-        Box(Modifier.fillMaxSize().background(palette.bg.toComposeColor())) {
+        // folds away over it. The grid keeps its column count through the fold and recalculates after it settles.
+        // The animated width is read only in layout, so the fold itself does not recompose the explorer each frame.
+        val width = animateDpAsState(
+            if (railed) RAIL_WIDTH else SIDEBAR_WIDTH,
+            XnotesMotion.defaultSpatialSpec(),
+            label = "sidebarWidth",
+            finishedListener = { settledRailed = railed },
+        )
+        Box(modifier.fillMaxSize().background(palette.bg.toComposeColor())) {
             // A navigation surface is always on screen here, so the panes never need their own menu button.
             BackstageMain(
                 Modifier.fillMaxSize().layout { measurable, constraints ->
@@ -376,7 +412,7 @@ private fun BackstageContent(
                     layout(constraints.maxWidth, placeable.height) { placeable.place(inset, 0) }
                 },
                 editor, view, compact, true, { setRailed(false) }, { selectView(BackstageView.HOME) },
-                calls, createMode, { createMode = it }, onImportCodeTheme, onImportFont, link, { selectView(BackstageView.PREFERENCES) },
+                calls, createMode, { createMode = it }, onImportCodeTheme, onImportFont, link, { selectView(BackstageView.PREFERENCES) }, explorerWidth,
             )
             // Both stay composed so a fold never pays to build one; only the current one is measured and placed.
             Layout(
@@ -491,17 +527,23 @@ private fun BackstageSidebar(modifier: Modifier, nav: SidebarNav, onCollapse: ()
 @Composable
 private fun BackstageRail(modifier: Modifier, nav: SidebarNav, onExpand: () -> Unit) {
     val palette = LocalPalette.current
-    Column(
-        modifier.fillMaxHeight().background(palette.panel.toComposeColor()).padding(vertical = 12.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Tooltip(stringResource(R.string.expand_sidebar), side = TipSide.RIGHT) {
-            IconButton(onClick = onExpand, modifier = Modifier.size(48.dp)) {
-                Icon(XnotesIcons.menu, stringResource(R.string.expand_sidebar), tint = palette.text.toComposeColor(), modifier = Modifier.size(24.dp))
+    NavigationRail(
+        modifier = modifier,
+        containerColor = palette.panel.toComposeColor(),
+        windowInsets = WindowInsets(0.dp, 0.dp, 0.dp, 0.dp),
+        header = {
+            Tooltip(stringResource(R.string.expand_sidebar), side = TipSide.RIGHT) {
+                IconButton(onClick = onExpand, modifier = Modifier.size(48.dp)) {
+                    Icon(XnotesIcons.menu, stringResource(R.string.expand_sidebar), tint = palette.text.toComposeColor(), modifier = Modifier.size(24.dp))
+                }
             }
-        }
-        Spacer(Modifier.height(10.dp))
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally) {
+        },
+    ) {
+        Column(
+            Modifier.weight(1f).verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
             RailItem(XnotesIcons.home, stringResource(R.string.home), selected = nav.homeSelected) { nav.onHome() }
             nav.recent?.let { on -> RailItem(XnotesIcons.clock, stringResource(R.string.recent), selected = on) { nav.onRecent() } }
             if (nav.pins.isNotEmpty()) Spacer(Modifier.height(8.dp))
@@ -509,7 +551,7 @@ private fun BackstageRail(modifier: Modifier, nav: SidebarNav, onExpand: () -> U
                 key(pin.uri) {
                     var menuOpen by remember { mutableStateOf(false) }
                     Box {
-                        RailItem(XnotesIcons.folder, pin.name, selected = i == nav.activePin, labelled = true, onLongClick = { menuOpen = true }) { nav.onOpenPin(pin) }
+                        RailItem(XnotesIcons.folder, pin.name, selected = i == nav.activePin, onLongClick = { menuOpen = true }) { nav.onOpenPin(pin) }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                             DropdownMenuItem(text = { Text(stringResource(R.string.unpin_from_sidebar)) }, onClick = { menuOpen = false; nav.onUnpin(pin) })
                         }
@@ -540,37 +582,50 @@ private fun BackstageMain(
     onImportFont: () -> Unit,
     link: ExplorerLink,
     onOpenPreferences: () -> Unit,
+    explorerWidth: Dp,
 ) {
     val palette = LocalPalette.current
-    Column(modifier) {
-        // About's slim top bar (constant height so toggling the sidebar never shifts it) holds the
-        // same leading control as Home/Preferences: a Back arrow to Home on compact, else a hamburger.
-        if (view == BackstageView.ABOUT) {
-            Box(
-                Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(start = 6.dp, end = 12.dp),
-                contentAlignment = Alignment.CenterStart,
-            ) {
-                if (compact) {
-                    Tooltip(stringResource(R.string.back_to_home)) {
-                        IconButton(onClick = onBackToHome) {
-                            Icon(XnotesIcons.prev, stringResource(R.string.back_to_home), tint = palette.text.toComposeColor(), modifier = Modifier.size(24.dp))
-                        }
-                    }
-                } else if (!sidebarOpen) {
-                    Tooltip(stringResource(R.string.show_sidebar)) {
-                        IconButton(onClick = onShowSidebar) {
-                            Icon(XnotesIcons.menu, stringResource(R.string.show_sidebar), tint = palette.text.toComposeColor(), modifier = Modifier.size(24.dp))
-                        }
-                    }
+    Box(modifier.fillMaxSize().padding(start = PANE_GUTTER, end = PANE_GUTTER, top = 4.dp, bottom = 12.dp)) {
+        AnimatedContent(
+            targetState = view,
+            transitionSpec = {
+                val isHomeNavigation = (initialState == BackstageView.HOME) != (targetState == BackstageView.HOME)
+                if (isHomeNavigation) {
+                    materialSharedAxisX(forward = targetState != BackstageView.HOME)
+                } else {
+                    materialFadeThrough()
                 }
-            }
-        }
-        Box(Modifier.weight(1f).fillMaxWidth().padding(start = PANE_GUTTER, end = PANE_GUTTER, top = 4.dp, bottom = 12.dp)) {
-            when (view) {
-                BackstageView.HOME -> HomePane(editor, calls, createMode, onCreateMode, sidebarOpen, onShowSidebar, link)
+            },
+            label = "backstage destination",
+        ) { destination ->
+            when (destination) {
+                BackstageView.HOME -> HomePane(editor, calls, createMode, onCreateMode, sidebarOpen, onShowSidebar, link, explorerWidth)
                 BackstageView.PREFERENCES -> PreferencesPane(editor, compact, sidebarOpen, onShowSidebar, onBackToHome, onImportCodeTheme, onImportFont)
                 BackstageView.TRASH -> TrashPane(editor, sidebarOpen, onShowSidebar, onOpenPreferences)
-                BackstageView.ABOUT -> AboutPane()
+                BackstageView.ABOUT -> Column(Modifier.fillMaxSize()) {
+                    // Keep About's top bar inside its animated destination. Removing a top bar
+                    // beside AnimatedContent shrinks and repositions its viewport immediately,
+                    // making the outgoing About content jump upward before its fade finishes.
+                    Box(
+                        Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(start = 6.dp, end = 12.dp),
+                        contentAlignment = Alignment.CenterStart,
+                    ) {
+                        if (compact) {
+                            Tooltip(stringResource(R.string.back_to_home)) {
+                                IconButton(onClick = onBackToHome) {
+                                    Icon(XnotesIcons.prev, stringResource(R.string.back_to_home), tint = palette.text.toComposeColor(), modifier = Modifier.size(24.dp))
+                                }
+                            }
+                        } else if (!sidebarOpen) {
+                            Tooltip(stringResource(R.string.show_sidebar)) {
+                                IconButton(onClick = onShowSidebar) {
+                                    Icon(XnotesIcons.menu, stringResource(R.string.show_sidebar), tint = palette.text.toComposeColor(), modifier = Modifier.size(24.dp))
+                                }
+                            }
+                        }
+                    }
+                    AboutPane(Modifier.weight(1f))
+                }
             }
         }
     }
@@ -581,61 +636,81 @@ private fun BackstageMain(
 @Composable
 private fun Command(icon: ImageVector, label: String, selected: Boolean = false, count: String? = null, onClick: () -> Unit) {
     val palette = LocalPalette.current
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .height(48.dp)
-            .then(if (selected) Modifier.background(palette.selectionBackground.toComposeColor()) else Modifier)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 18.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(icon, contentDescription = label, tint = (if (selected) palette.selectionForeground else palette.accent).toComposeColor(), modifier = Modifier.size(20.dp))
-        Spacer(Modifier.width(16.dp))
-        Text(
-            label,
-            color = if (selected) palette.selectionForeground.toComposeColor() else palette.text.toComposeColor(),
-            fontSize = 15.sp,
-            fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
-            modifier = Modifier.weight(1f),
-        )
-        if (count != null) Text(count, color = palette.textDim.toComposeColor(), fontSize = 13.sp)
-    }
+    NavigationDrawerItem(
+        label = {
+            Text(
+                label,
+                fontSize = 15.sp,
+                fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
+                maxLines = 1,
+            )
+        },
+        selected = selected,
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth().padding(NavigationDrawerItemDefaults.ItemPadding),
+        icon = { Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp)) },
+        badge = count?.let { { Text(it, fontSize = 13.sp) } },
+        shape = MaterialTheme.shapes.large,
+        colors = NavigationDrawerItemDefaults.colors(
+            selectedContainerColor = palette.selectionBackground.toComposeColor(),
+            unselectedContainerColor = Color.Transparent,
+            selectedIconColor = palette.selectionForeground.toComposeColor(),
+            unselectedIconColor = palette.accent.toComposeColor(),
+            selectedTextColor = palette.selectionForeground.toComposeColor(),
+            unselectedTextColor = palette.text.toComposeColor(),
+            selectedBadgeColor = palette.selectionForeground.toComposeColor(),
+            unselectedBadgeColor = palette.textDim.toComposeColor(),
+        ),
+    )
 }
 
-/** One rail destination: an icon in a pill that fills when selected. Only [labelled] ones show their name beneath; the rest name themselves in a tip. */
+/** Core destinations use Material's rail item; user-pinned destinations keep their long-press menu. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun RailItem(icon: ImageVector, label: String, selected: Boolean = false, labelled: Boolean = false, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
+private fun RailItem(icon: ImageVector, label: String, selected: Boolean = false, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
     val palette = LocalPalette.current
-    val pill = MaterialTheme.shapes.large
-    val item = @Composable {
+    if (onLongClick == null) {
+        NavigationRailItem(
+            selected = selected,
+            onClick = onClick,
+            icon = { Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp)) },
+            label = { Text(label, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis) },
+            alwaysShowLabel = true,
+            colors = NavigationRailItemDefaults.colors(
+                selectedIconColor = palette.selectionForeground.toComposeColor(),
+                selectedTextColor = palette.selectionForeground.toComposeColor(),
+                indicatorColor = palette.selectionBackground.toComposeColor(),
+                unselectedIconColor = palette.accent.toComposeColor(),
+                unselectedTextColor = palette.text.toComposeColor(),
+            ),
+        )
+    } else {
         Column(
-            Modifier.width(RAIL_WIDTH).combinedClickable(onClick = onClick, onLongClick = onLongClick).padding(top = if (labelled) 6.dp else 8.dp, bottom = 8.dp),
+            Modifier
+                .width(RAIL_WIDTH)
+                .semantics { this.selected = selected }
+                .combinedClickable(role = Role.Tab, onClick = onClick, onLongClick = onLongClick)
+                .padding(top = 6.dp, bottom = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Box(
-                Modifier.size(width = 56.dp, height = 32.dp).clip(pill)
+                Modifier.size(width = 56.dp, height = 32.dp).clip(MaterialTheme.shapes.large)
                     .background(if (selected) palette.selectionBackground.toComposeColor() else Color.Transparent),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(icon, if (labelled) null else label, tint = (if (selected) palette.selectionForeground else palette.accent).toComposeColor(), modifier = Modifier.size(20.dp))
+                Icon(icon, null, tint = (if (selected) palette.selectionForeground else palette.accent).toComposeColor(), modifier = Modifier.size(24.dp))
             }
-            if (labelled) {
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    label,
-                    color = palette.text.toComposeColor(),
-                    fontSize = 11.sp,
-                    fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(horizontal = 4.dp),
-                )
-            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                label,
+                color = (if (selected) palette.selectionForeground else palette.text).toComposeColor(),
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(horizontal = 4.dp),
+            )
         }
     }
-    if (labelled) item() else Tooltip(label, side = TipSide.RIGHT) { item() }
 }
 
 /** A small caption over a group of sidebar rows. */
@@ -656,15 +731,18 @@ private fun SidebarLabel(text: String) {
 @Composable
 private fun ColorCommand(color: Rgba, name: String, selected: Boolean, onClick: () -> Unit, onRename: () -> Unit, onForget: () -> Unit) {
     val palette = LocalPalette.current
+    val indicatorShape = MaterialTheme.shapes.large
     var menuOpen by remember { mutableStateOf(false) }
     Box {
         Row(
             Modifier
                 .fillMaxWidth()
-                .height(48.dp)
-                .then(if (selected) Modifier.background(palette.selectionBackground.toComposeColor()) else Modifier)
+                .height(56.dp)
+                .padding(horizontal = 12.dp)
+                .clip(indicatorShape)
+                .background(if (selected) palette.selectionBackground.toComposeColor() else Color.Transparent)
                 .combinedClickable(onClick = onClick, onLongClick = { menuOpen = true })
-                .padding(horizontal = 18.dp),
+                .padding(horizontal = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(Modifier.size(20.dp), contentAlignment = Alignment.Center) {
@@ -710,15 +788,18 @@ internal fun ColorNameDialog(editor: Editor, color: Rgba, onDone: () -> Unit) {
 @Composable
 private fun PinnedCommand(label: String, selected: Boolean, onClick: () -> Unit, onUnpin: () -> Unit) {
     val palette = LocalPalette.current
+    val indicatorShape = MaterialTheme.shapes.large
     var menuOpen by remember { mutableStateOf(false) }
     Box {
         Row(
             Modifier
                 .fillMaxWidth()
-                .height(48.dp)
-                .then(if (selected) Modifier.background(palette.selectionBackground.toComposeColor()) else Modifier)
+                .height(56.dp)
+                .padding(horizontal = 12.dp)
+                .clip(indicatorShape)
+                .background(if (selected) palette.selectionBackground.toComposeColor() else Color.Transparent)
                 .combinedClickable(onClick = onClick, onLongClick = { menuOpen = true })
-                .padding(horizontal = 18.dp),
+                .padding(horizontal = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(XnotesIcons.folder, null, tint = (if (selected) palette.selectionForeground else palette.accent).toComposeColor(), modifier = Modifier.size(20.dp))
@@ -750,12 +831,16 @@ private fun SortOption(
     key: ExplorerSortKey,
     activeKey: ExplorerSortKey,
     descending: Boolean,
+    shapeIndex: Int,
+    shapeCount: Int,
     onPick: (ExplorerSortKey, Boolean) -> Unit,
 ) {
     val active = key == activeKey
-    ChoiceMenuItem(
-        active,
+    ExpressiveChoiceMenuItem(
+        selected = active,
         onClick = { if (active) onPick(key, !descending) else onPick(key, key != ExplorerSortKey.NAME) },
+        shapeIndex = shapeIndex,
+        shapeCount = shapeCount,
         trailingIcon = if (active) {
             { fg ->
                 Icon(
@@ -772,6 +857,7 @@ private fun SortOption(
 // --- home pane: the folder explorer ---
 
 /** The things the explorer can add to the current folder; shared by the quick-create button and the ⋮ menu. */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun NewItemMenuItems(
     onClose: () -> Unit,
@@ -785,17 +871,18 @@ private fun NewItemMenuItems(
     val row = Modifier.height(52.dp)
     val pad = PaddingValues(start = 14.dp, end = 18.dp)
     @Composable
-    fun item(icon: ImageVector, label: String, onPick: () -> Unit) = DropdownMenuItem(
+    fun item(index: Int, icon: ImageVector, label: String, onPick: () -> Unit) = DropdownMenuItem(
         text = { Text(label, fontSize = 16.sp) },
         leadingIcon = { Icon(icon, null, tint = tint, modifier = Modifier.size(21.dp)) },
         onClick = { onClose(); onPick() },
         modifier = row,
         contentPadding = pad,
+        shape = MenuDefaults.itemShape(index, 4).shape,
     )
-    item(XnotesIcons.edit, stringResource(R.string.new_note_menu)) { onCreateMode(CreateMode.FILE) }
-    item(XnotesIcons.canvas, stringResource(R.string.new_canvas_menu)) { onCreateMode(CreateMode.CANVAS) }
-    item(XnotesIcons.importDoc, stringResource(R.string.import_pdf)) { onImportPdf() }
-    item(XnotesIcons.newFolder, stringResource(R.string.new_folder_menu)) { onCreateMode(CreateMode.FOLDER) }
+    item(0, XnotesIcons.edit, stringResource(R.string.new_note_menu)) { onCreateMode(CreateMode.FILE) }
+    item(1, XnotesIcons.canvas, stringResource(R.string.new_canvas_menu)) { onCreateMode(CreateMode.CANVAS) }
+    item(2, XnotesIcons.importDoc, stringResource(R.string.import_pdf)) { onImportPdf() }
+    item(3, XnotesIcons.newFolder, stringResource(R.string.new_folder_menu)) { onCreateMode(CreateMode.FOLDER) }
 }
 
 /** What the explorer hands back to the activity: opening, sharing and exporting files it can't do itself. */
@@ -825,16 +912,18 @@ private fun HomePane(
     sidebarOpen: Boolean,
     onShowSidebar: () -> Unit,
     link: ExplorerLink,
+    explorerWidth: Dp,
 ) {
     val focusManager = LocalFocusManager.current
     // A tap on empty space anywhere in the pane drops focus from the search field, dismissing it
     // (children like tiles and buttons consume their own taps, so this only fires "outside").
     Box(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures { focusManager.clearFocus() } }) {
-        ExplorerSection(editor, calls, createMode, onCreateMode, sidebarOpen, onShowSidebar, link)
+        ExplorerSection(editor, calls, createMode, onCreateMode, sidebarOpen, onShowSidebar, link, explorerWidth)
     }
 }
 
 /** The explorer's quick-create button, the ⋮ menu's New block; while items are picked it stretches into an Export PDF pill. */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun CreateButton(
     exporting: Boolean,
@@ -843,33 +932,96 @@ private fun CreateButton(
     onExport: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var menuOpen by remember { mutableStateOf(false) }
+    var menuOpen by rememberSaveable { mutableStateOf(false) }
     val createLabel = stringResource(R.string.create_new)
     val exportLabel = stringResource(R.string.export_pdf_action)
+    val closeMenuLabel = stringResource(R.string.close_create_menu)
+    val expandedState = stringResource(R.string.create_menu_expanded)
+    val collapsedState = stringResource(R.string.create_menu_collapsed)
+    LaunchedEffect(exporting) {
+        if (exporting) menuOpen = false
+    }
+    BackHandler(enabled = menuOpen && !exporting) { menuOpen = false }
+
     Box(modifier) {
-        // One button throughout, so the pill grows out of the circle instead of replacing it.
-        Tooltip(if (exporting) exportLabel else createLabel) {
-            ExtendedFloatingActionButton(
-                text = { Text(exportLabel) },
-                icon = {
-                    Crossfade(exporting, label = "createButtonIcon") { e ->
-                        Icon(if (e) XnotesIcons.pdfFile else XnotesIcons.edit, if (e) exportLabel else createLabel, Modifier.size(24.dp))
-                    }
-                },
-                onClick = { if (exporting) onExport() else menuOpen = true },
-                expanded = exporting,
-                shape = CircleShape,
-            )
-        }
-        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-            NewItemMenuItems({ menuOpen = false }, onCreateMode, onImportPdf)
+        AnimatedContent(
+            targetState = exporting,
+            transitionSpec = {
+                expandHorizontally(
+                    expandFrom = Alignment.End,
+                    animationSpec = XnotesMotion.fastSpatialSpec(),
+                ) togetherWith shrinkHorizontally(
+                    shrinkTowards = Alignment.End,
+                    animationSpec = XnotesMotion.fastSpatialSpec(),
+                )
+            },
+            label = "createExportAction",
+        ) { showExport ->
+            if (showExport) {
+                Tooltip(exportLabel) {
+                    ExtendedFloatingActionButton(
+                        text = { Text(exportLabel) },
+                        icon = { Icon(XnotesIcons.pdfFile, exportLabel, Modifier.size(24.dp)) },
+                        onClick = onExport,
+                        expanded = true,
+                        shape = CircleShape,
+                    )
+                }
+            } else {
+                FloatingActionButtonMenu(
+                    expanded = menuOpen,
+                    button = {
+                        val buttonLabel = if (menuOpen) closeMenuLabel else createLabel
+                        Tooltip(buttonLabel) {
+                            ToggleFloatingActionButton(
+                                checked = menuOpen,
+                                onCheckedChange = { menuOpen = it },
+                                modifier = Modifier.semantics {
+                                    contentDescription = buttonLabel
+                                    stateDescription = if (menuOpen) expandedState else collapsedState
+                                },
+                            ) {
+                                val icon by remember {
+                                    derivedStateOf {
+                                        if (checkedProgress > 0.5f) XnotesIcons.close else XnotesIcons.plus
+                                    }
+                                }
+                                Icon(icon, contentDescription = null, modifier = Modifier.animateIcon({ checkedProgress }))
+                            }
+                        }
+                    },
+                ) {
+                    // The component lays children out top-to-bottom; keeping the most common
+                    // action last makes it sit nearest the FAB and arrive first in the stagger.
+                    FloatingActionButtonMenuItem(
+                        onClick = { menuOpen = false; onCreateMode(CreateMode.FOLDER) },
+                        icon = { Icon(XnotesIcons.newFolder, contentDescription = null) },
+                        text = { Text(stringResource(R.string.new_folder_menu)) },
+                    )
+                    FloatingActionButtonMenuItem(
+                        onClick = { menuOpen = false; onImportPdf() },
+                        icon = { Icon(XnotesIcons.importDoc, contentDescription = null) },
+                        text = { Text(stringResource(R.string.import_pdf)) },
+                    )
+                    FloatingActionButtonMenuItem(
+                        onClick = { menuOpen = false; onCreateMode(CreateMode.CANVAS) },
+                        icon = { Icon(XnotesIcons.canvas, contentDescription = null) },
+                        text = { Text(stringResource(R.string.new_canvas_menu)) },
+                    )
+                    FloatingActionButtonMenuItem(
+                        onClick = { menuOpen = false; onCreateMode(CreateMode.FILE) },
+                        icon = { Icon(XnotesIcons.edit, contentDescription = null) },
+                        text = { Text(stringResource(R.string.new_note_menu)) },
+                    )
+                }
+            }
         }
     }
 }
 
 // --- explorer section ---
 
-@OptIn(ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalLayoutApi::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun ExplorerSection(
     editor: Editor,
@@ -879,6 +1031,7 @@ private fun ExplorerSection(
     sidebarOpen: Boolean,
     onShowSidebar: () -> Unit,
     link: ExplorerLink,
+    explorerWidth: Dp,
 ) {
     val palette = LocalPalette.current
     val root = editor.browseRoot
@@ -917,10 +1070,7 @@ private fun ExplorerSection(
     val context = LocalContext.current
     val words = rememberExplorerWords()
     val density = LocalDensity.current
-    val screenWidthDp = LocalConfiguration.current.screenWidthDp
-    val compactScreen = screenWidthDp < COMPACT_WIDTH_DP
-    // The pane's width with the rail beside it (a compact screen's drawer covers it instead), so folding the sidebar never reflows the gallery.
-    val railedWidth = screenWidthDp.dp - (if (compactScreen) 0.dp else RAIL_WIDTH) - PANE_GUTTER * 2
+    val compactScreen = LocalConfiguration.current.screenWidthDp < COMPACT_WIDTH_DP
     val prefs = remember(editor.prefsVersion) { editor.preferences }
     val rootDocId = remember(root) { editor.browseRootDocId(root) }
     val stack = remember(root) { mutableStateListOf<Pair<String, String>>() }
@@ -1223,8 +1373,12 @@ private fun ExplorerSection(
                 when {
                     selection.isNotEmpty() -> toggleSelect(e)
                     e.isDir -> openFolder(e)
-                    prefsNow.value.tapPreviews -> previewing = e
-                    else -> callsNow.value.openFile(e.documentUri)
+                    prefsNow.value.tapPreviews -> {
+                        previewing = e
+                    }
+                    else -> {
+                        callsNow.value.openFile(e.documentUri)
+                    }
                 }
             },
             onLongClick = { e ->
@@ -1306,13 +1460,13 @@ private fun ExplorerSection(
     // A failed operation shows in the app's snackbar, which stays in view however far the files are scrolled.
     LaunchedEffect(opError) { opError?.let { editor.say(it); opError = null } }
     val empty = when {
-        colorFilter != null && colorResults == null -> EmptyState(stringResource(R.string.finding))
+        colorFilter != null && colorResults == null -> EmptyState(stringResource(R.string.finding), loading = true)
         colorFilter != null && colorResults!!.isEmpty() -> EmptyState(stringResource(R.string.nothing_this_colour), EmptyArt.SEARCH)
-        searching && results == null -> EmptyState(stringResource(R.string.searching))
+        searching && results == null -> EmptyState(stringResource(R.string.searching), loading = true)
         searching && results!!.isEmpty() -> EmptyState(stringResource(R.string.no_notes_match, trimmed), EmptyArt.SEARCH)
-        showRecent && recents == null -> EmptyState(stringResource(R.string.loading))
+        showRecent && recents == null -> EmptyState(stringResource(R.string.loading), loading = true)
         showRecent && recents!!.isEmpty() -> EmptyState(stringResource(R.string.recent_empty), EmptyArt.RECENT)
-        source == null -> EmptyState(stringResource(R.string.loading))
+        source == null -> EmptyState(stringResource(R.string.loading), loading = true)
         layout == ExplorerLayout.COLUMNS -> null
         source.isEmpty() -> EmptyState(
             if (layout == ExplorerLayout.TIMELINE) stringResource(R.string.nothing_here_yet) else stringResource(R.string.folder_empty),
@@ -1350,21 +1504,30 @@ private fun ExplorerSection(
                             Box {
                                 ExplorerChip(if (view.timelineByCreated) stringResource(R.string.sort_created) else stringResource(R.string.sort_modified), true, icon = XnotesIcons.sort, trailing = XnotesIcons.chevronDown, labelled = labelled) { byOpen = true }
                                 DropdownMenu(expanded = byOpen, onDismissRequest = { byOpen = false }) {
-                                    listOf(true to stringResource(R.string.sort_created), false to stringResource(R.string.sort_modified)).forEach { (created, label) ->
-                                        ChoiceMenuItem(created == view.timelineByCreated, onClick = { byOpen = false; setView(view.copy(timelineByCreated = created)) }) { fg ->
+                                    val options = listOf(true to stringResource(R.string.sort_created), false to stringResource(R.string.sort_modified))
+                                    options.forEachIndexed { index, (created, label) ->
+                                        ExpressiveChoiceMenuItem(
+                                            selected = created == view.timelineByCreated,
+                                            onClick = { byOpen = false; setView(view.copy(timelineByCreated = created)) },
+                                            shapeIndex = index,
+                                            shapeCount = options.size,
+                                        ) { fg ->
                                             Text(label, color = fg)
                                         }
                                     }
                                 }
                             }
-                            ExplorerChip(stringResource(R.string.include_subfolders), includeSubfolders, icon = XnotesIcons.folder) { includeSubfolders = !includeSubfolders }
+                            ExplorerFilterChip(stringResource(R.string.include_subfolders), includeSubfolders, icon = XnotesIcons.folder) { includeSubfolders = !includeSubfolders }
                         } else if (layout != ExplorerLayout.LIST && layout != ExplorerLayout.COLUMNS && !showRecent) {
                             var sortOpen by remember { mutableStateOf(false) }
                             Box {
                                 ExplorerChip(sortLabel(view.sortKey), true, icon = XnotesIcons.sort, trailing = if (view.descending) XnotesIcons.arrowDown else XnotesIcons.arrowUp, labelled = labelled) { sortOpen = true }
                                 DropdownMenu(expanded = sortOpen, onDismissRequest = { sortOpen = false }) {
                                     val pick: (ExplorerSortKey, Boolean) -> Unit = { k, d -> sortOpen = false; setView(view.copy(sortKey = k, descending = d)) }
-                                    ExplorerSortKey.entries.forEach { k -> SortOption(sortLabel(k), k, view.sortKey, view.descending, pick) }
+                                    val options = ExplorerSortKey.entries
+                                    options.forEachIndexed { index, k ->
+                                        SortOption(sortLabel(k), k, view.sortKey, view.descending, index, options.size, pick)
+                                    }
                                 }
                             }
                         }
@@ -1374,8 +1537,14 @@ private fun ExplorerSection(
                                 val grouped = view.groupBy != GroupBy.NONE
                                 ExplorerChip(stringResource(view.groupBy.chipRes), grouped, icon = XnotesIcons.layers, trailing = XnotesIcons.chevronDown, labelled = labelled) { groupOpen = true }
                                 DropdownMenu(expanded = groupOpen, onDismissRequest = { groupOpen = false }) {
-                                    GroupBy.entries.forEach { g ->
-                                        ChoiceMenuItem(g == view.groupBy, onClick = { groupOpen = false; setView(view.copy(groupBy = g)) }) { fg ->
+                                    val options = GroupBy.entries
+                                    options.forEachIndexed { index, g ->
+                                        ExpressiveChoiceMenuItem(
+                                            selected = g == view.groupBy,
+                                            onClick = { groupOpen = false; setView(view.copy(groupBy = g)) },
+                                            shapeIndex = index,
+                                            shapeCount = options.size,
+                                        ) { fg ->
                                             Text(stringResource(g.labelRes), color = fg)
                                         }
                                     }
@@ -1387,15 +1556,25 @@ private fun ExplorerSection(
                             val k = kindFilter
                             ExplorerChip(k?.let { words.kinds(it) } ?: stringResource(R.string.all_kinds), k != null, icon = XnotesIcons.filter, trailing = XnotesIcons.chevronDown, labelled = labelled) { kindOpen = true }
                             DropdownMenu(expanded = kindOpen, onDismissRequest = { kindOpen = false }) {
-                                (listOf<EntryKind?>(null) + listOf(EntryKind.NOTE, EntryKind.PDF, EntryKind.CANVAS)).forEach { option ->
-                                    ChoiceMenuItem(option == kindFilter, onClick = { kindOpen = false; kindFilter = option }) { fg ->
+                                val options = listOf<EntryKind?>(null) + listOf(EntryKind.NOTE, EntryKind.PDF, EntryKind.CANVAS)
+                                options.forEachIndexed { index, option ->
+                                    ExpressiveChoiceMenuItem(
+                                        selected = option == kindFilter,
+                                        onClick = { kindOpen = false; kindFilter = option },
+                                        shapeIndex = index,
+                                        shapeCount = options.size,
+                                    ) { fg ->
                                         Text(option?.let { words.kinds(it) } ?: stringResource(R.string.all_kinds), color = fg)
                                     }
                                 }
                             }
                         }
                         clipboard?.let { clip ->
-                            ExplorerChip(pluralStringResource(R.plurals.paste_items, clip.entries.size, clip.entries.size), true, icon = XnotesIcons.paste) { paste(clip) }
+                            AssistChip(
+                                onClick = { paste(clip) },
+                                label = { Text(pluralStringResource(R.plurals.paste_items, clip.entries.size, clip.entries.size)) },
+                                leadingIcon = { Icon(XnotesIcons.paste, null, modifier = Modifier.size(18.dp)) },
+                            )
                             ExplorerIcon(XnotesIcons.close, stringResource(R.string.clear_clipboard), palette.textDim.toComposeColor()) { clipboard = null }
                         }
                     }
@@ -1541,56 +1720,71 @@ private fun ExplorerSection(
                     body, recents.orEmpty(), editor.sidebarPins, rootName ?: stringResource(R.string.folder),
                     counts = countsLabel(words, arranged.orEmpty().count { it.isDir }, arranged.orEmpty().count { !it.isDir }),
                     onSeeAll = { showRecent = true; selection.clear() },
-                    onOpenRecent = { host.onClick(it) },
+                    onOpenRecent = host.onClick,
                     onOpenPin = { openChain(it.uri) },
                 )
             })
             val gridTop: (LazyGridScope.() -> Unit)? = shelfBlock?.let { c -> { item(key = "shelves", span = { GridItemSpan(maxLineSpan) }, contentType = "shelves") { c() } } }
-            when {
-                empty != null && !shelves -> Column(Modifier.fillMaxSize()) {
-                    Spacer(Modifier.height(EXPLORER_HEADER))
-                    chipRow(48.dp)
-                    EmptyPane(empty.text, empty.art, if (!empty.offersCreate) null else { {
-                        PrimaryButton(XnotesIcons.edit, stringResource(R.string.new_note_menu)) { onCreateMode(CreateMode.FILE) }
-                        PrimaryButton(XnotesIcons.canvas, stringResource(R.string.new_canvas_menu)) { onCreateMode(CreateMode.CANVAS) }
-                        PrimaryButton(XnotesIcons.importDoc, stringResource(R.string.import_pdf), onClick = calls.importPdf)
-                    } })
-                }
-                layout == ExplorerLayout.GRID -> GridBody(body, gridState, gridColumns(screenWidthDp, view.tileSize), chipRow, gridTop, Modifier.fillMaxSize())
-                layout == ExplorerLayout.GALLERY -> GalleryBody(body, galleryState, galleryColumns(railedWidth, view.tileSize), chipRow, gridTop, Modifier.fillMaxSize())
-                layout == ExplorerLayout.LIST -> BoxWithConstraints(Modifier.fillMaxSize()) {
-                    ListBody(
-                        body, listState, wide = maxWidth >= 720.dp,
-                        onSort = if (showRecent) null else ({ k -> setView(if (view.sortKey == k) view.copy(descending = !view.descending) else view.copy(sortKey = k, descending = k != ExplorerSortKey.NAME)) }),
-                        chips = chipRow,
-                        top = shelfBlock?.let { c -> { item(key = "shelves", contentType = "shelves") { c() } } }, modifier = Modifier.fillMaxSize(),
-                    )
-                }
-                layout == ExplorerLayout.TIMELINE -> TimelineBody(body, arranged.orEmpty().filterNot { it.isDir }, shownMonth, { timelineMonth = it }, timelineState, chipRow, Modifier.fillMaxSize())
-                // Each column scrolls on its own, so here the chip row stays put under the header.
-                else -> Column(Modifier.fillMaxSize()) {
-                    Spacer(Modifier.height(EXPLORER_HEADER))
-                    chipRow(48.dp)
-                    ColumnsBody(
-                        body, root,
-                        levels = listOf(rootDocId to (rootName ?: stringResource(R.string.folder))) + stack,
-                        refreshKey = refreshKey,
-                        arrange = columnsArrange,
-                        picked = columnsPick,
-                        onOpenFolder = { level, e ->
-                            if (selection.isNotEmpty()) { toggleSelect(e); return@ColumnsBody }
-                            while (stack.size > level) stack.removeAt(stack.lastIndex)
-                            stack.add(editor.browseDocId(e.documentUri) to e.name)
-                            columnsPick = null
-                        },
-                        onPickFile = { level, e ->
-                            if (selection.isNotEmpty()) { toggleSelect(e); return@ColumnsBody }
-                            while (stack.size > level) stack.removeAt(stack.lastIndex)
-                            columnsPick = e
-                        },
-                        preview = { e -> FilePreview(body, e, pathText, previewActions(e), Modifier.fillMaxSize()) },
-                        modifier = Modifier.fillMaxSize(),
-                    )
+            AnimatedContent(
+                targetState = layout,
+                transitionSpec = { materialFadeThrough(smallSurface = true) },
+                label = "explorer layout",
+            ) { destination ->
+                when {
+                    empty != null && !shelves -> Column(Modifier.fillMaxSize()) {
+                        Spacer(Modifier.height(EXPLORER_HEADER))
+                        chipRow(48.dp)
+                        EmptyPane(
+                            text = empty.text,
+                            art = empty.art,
+                            actions = if (!empty.offersCreate) null else {
+                                {
+                                    PrimaryButton(XnotesIcons.edit, stringResource(R.string.new_note_menu)) { onCreateMode(CreateMode.FILE) }
+                                    PrimaryButton(XnotesIcons.canvas, stringResource(R.string.new_canvas_menu)) { onCreateMode(CreateMode.CANVAS) }
+                                    PrimaryButton(XnotesIcons.importDoc, stringResource(R.string.import_pdf), onClick = calls.importPdf)
+                                }
+                            },
+                            loading = empty.loading,
+                        )
+                    }
+                    destination == ExplorerLayout.GRID -> GridBody(body, gridState, gridColumns(explorerWidth.value.roundToInt(), view.tileSize), chipRow, gridTop, Modifier.fillMaxSize())
+                    destination == ExplorerLayout.GALLERY -> GalleryBody(body, galleryState, galleryColumns(explorerWidth, view.tileSize), chipRow, gridTop, Modifier.fillMaxSize())
+                    destination == ExplorerLayout.LIST -> BoxWithConstraints(Modifier.fillMaxSize()) {
+                        ListBody(
+                            body, listState, wide = maxWidth >= 720.dp,
+                            onSort = if (showRecent) null else ({ k -> setView(if (view.sortKey == k) view.copy(descending = !view.descending) else view.copy(sortKey = k, descending = k != ExplorerSortKey.NAME)) }),
+                            chips = chipRow,
+                            top = shelfBlock?.let { c -> { item(key = "shelves", contentType = "shelves") { c() } } }, modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                    destination == ExplorerLayout.TIMELINE -> TimelineBody(body, arranged.orEmpty().filterNot { it.isDir }, shownMonth, { timelineMonth = it }, timelineState, chipRow, Modifier.fillMaxSize())
+                    // Each column scrolls on its own, so here the chip row stays put under the header.
+                    else -> Column(Modifier.fillMaxSize()) {
+                        Spacer(Modifier.height(EXPLORER_HEADER))
+                        chipRow(48.dp)
+                        ColumnsBody(
+                            body, root,
+                            levels = listOf(rootDocId to (rootName ?: stringResource(R.string.folder))) + stack,
+                            refreshKey = refreshKey,
+                            arrange = columnsArrange,
+                            picked = columnsPick,
+                            onOpenFolder = { level, e ->
+                                if (selection.isNotEmpty()) { toggleSelect(e); return@ColumnsBody }
+                                while (stack.size > level) stack.removeAt(stack.lastIndex)
+                                stack.add(editor.browseDocId(e.documentUri) to e.name)
+                                columnsPick = null
+                            },
+                            onPickFile = { level, e ->
+                                if (selection.isNotEmpty()) { toggleSelect(e); return@ColumnsBody }
+                                while (stack.size > level) stack.removeAt(stack.lastIndex)
+                                columnsPick = e
+                            },
+                            preview = { e ->
+                                FilePreview(body, e, pathText, previewActions(e), Modifier.fillMaxSize())
+                            },
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
                 }
             }
             // Floating stack of the dragged notes, the primary card centred on the finger and lifted.
@@ -1692,15 +1886,40 @@ private fun ExplorerSection(
                     var moreOpen by remember { mutableStateOf(false) }
                     Box(Modifier.floatingBacking(liftNow, CircleShape, floatFill, floatEdge)) {
                         ExplorerIcon(XnotesIcons.more, stringResource(R.string.more)) { moreOpen = true }
-                        DropdownMenu(expanded = moreOpen, onDismissRequest = { moreOpen = false }) {
-                            NewItemMenuItems({ moreOpen = false }, onCreateMode, calls.importPdf)
-                            HorizontalDivider(color = palette.border.toComposeColor())
-                            clipboard?.let { clip ->
-                                DropdownMenuItem(text = { Text(pluralStringResource(R.plurals.paste_items_here, clip.entries.size, clip.entries.size)) }, onClick = { moreOpen = false; paste(clip) })
-                            }
-                            DropdownMenuItem(text = { Text(stringResource(R.string.select_all)) }, onClick = { moreOpen = false; selection.clear(); selection.addAll(arranged.orEmpty()) })
-                            DropdownMenuItem(text = { Text(stringResource(R.string.change_folder)) }, onClick = { moreOpen = false; calls.pickRoot() })
-                            DropdownMenuItem(text = { Text(stringResource(R.string.forget_folder)) }, onClick = { moreOpen = false; editor.clearBrowseRoot() })
+                        GroupedDropdownMenu(expanded = moreOpen, onDismissRequest = { moreOpen = false }) {
+                                DropdownMenuGroup(shapes = MenuDefaults.groupShape(0, 3)) {
+                                    NewItemMenuItems({ moreOpen = false }, onCreateMode, calls.importPdf)
+                                }
+                                Spacer(Modifier.height(MenuDefaults.GroupSpacing))
+                                val selectionActionCount = if (clipboard == null) 1 else 2
+                                DropdownMenuGroup(shapes = MenuDefaults.groupShape(1, 3)) {
+                                    var actionIndex = 0
+                                    clipboard?.let { clip ->
+                                        DropdownMenuItem(
+                                            text = { Text(pluralStringResource(R.plurals.paste_items_here, clip.entries.size, clip.entries.size)) },
+                                            onClick = { moreOpen = false; paste(clip) },
+                                            shape = MenuDefaults.itemShape(actionIndex++, selectionActionCount).shape,
+                                        )
+                                    }
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.select_all)) },
+                                        onClick = { moreOpen = false; selection.clear(); selection.addAll(arranged.orEmpty()) },
+                                        shape = MenuDefaults.itemShape(actionIndex, selectionActionCount).shape,
+                                    )
+                                }
+                                Spacer(Modifier.height(MenuDefaults.GroupSpacing))
+                                DropdownMenuGroup(shapes = MenuDefaults.groupShape(2, 3)) {
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.change_folder)) },
+                                        onClick = { moreOpen = false; calls.pickRoot() },
+                                        shape = MenuDefaults.itemShape(0, 2).shape,
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.forget_folder)) },
+                                        onClick = { moreOpen = false; editor.clearBrowseRoot() },
+                                        shape = MenuDefaults.itemShape(1, 2).shape,
+                                    )
+                                }
                         }
                     }
                 }
@@ -1773,16 +1992,16 @@ private fun ExplorerSection(
             busy = busy,
             onImportTemplate = { callsNow.value.importTemplate() },
             onTemplateFromImage = { callsNow.value.templateFromImage(it) },
-            onCreate = { n, setup ->
+            onCreate = { n, setup, onCreated ->
                 busy = true
                 scope.launch {
                     val uri = withContext(Dispatchers.IO) { editor.createNoteFile(root, currentDocId, n, setup) }
                     busy = false
                     if (uri != null) {
                         fieldError = null
-                        onCreateMode(CreateMode.NONE)
                         refreshKey++
                         callsNow.value.openFile(uri)
+                        onCreated()
                     } else {
                         fieldError = context.getString(R.string.err_create_note)
                     }
@@ -1997,6 +2216,20 @@ internal fun ExplorerSearchField(query: String, onQueryChange: (String) -> Unit,
                 onValueChange = onQueryChange,
                 singleLine = true,
                 textStyle = TextStyle(color = palette.text.toComposeColor(), fontSize = 14.sp),
+                decorationBox = { innerTextField ->
+                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
+                        if (query.isEmpty()) {
+                            Text(
+                                stringResource(R.string.search_notes),
+                                color = palette.textDim.toComposeColor(),
+                                fontSize = 14.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        innerTextField()
+                    }
+                },
                 cursorBrush = SolidColor(palette.accent.toComposeColor()),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
@@ -2052,6 +2285,7 @@ private fun entryDate(entry: BrowseEntry): String =
 private fun codeOutline(c: Rgba, isDark: Boolean): Rgba = if (isDark) c else ColorMath.darkenForLight(c)
 
 /** The per-entry overflow menu. Files get the extra Share/Save-a-copy/Export block (pass [onShare]); folders don't. */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 internal fun EntryMenu(
     expanded: Boolean,
@@ -2071,34 +2305,99 @@ internal fun EntryMenu(
     onPreview: (() -> Unit)? = null,
     deleteLabel: String = stringResource(R.string.delete),
 ) {
-    val palette = LocalPalette.current
+    val actionCount =
+        (if (onPreview != null) 1 else 0) +
+            1 + // Rename
+            (if (onMoveTo != null) 1 else 0) +
+            2 + // Copy, cut
+            (if (onColor != null) 1 else 0) +
+            (if (onNameColor != null) 1 else 0) +
+            (if (onTogglePin != null) 1 else 0)
+    val groupCount = if (onShare != null) 3 else 2
     // "Colour code" swaps the menu's contents for the swatch picker until a colour (or None) is chosen;
     // closing the menu resets it so it always reopens on the main list.
     var showColors by remember { mutableStateOf(false) }
     LaunchedEffect(expanded) { if (!expanded) showColors = false }
-    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
-        if (showColors) {
+    if (showColors) {
+        DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
             ColorCodeMenuContent { c -> onDismiss(); onColor?.invoke(c) }
-        } else {
-            if (onPreview != null) DropdownMenuItem(text = { Text(stringResource(R.string.preview)) }, onClick = { onDismiss(); onPreview() })
-            DropdownMenuItem(text = { Text(stringResource(R.string.rename)) }, onClick = { onDismiss(); onRename?.invoke() })
-            if (onMoveTo != null) DropdownMenuItem(text = { Text(stringResource(R.string.move_to_folder_ellipsis)) }, onClick = { onDismiss(); onMoveTo() })
-            DropdownMenuItem(text = { Text(stringResource(R.string.copy)) }, onClick = { onDismiss(); onCopy?.invoke() })
-            DropdownMenuItem(text = { Text(stringResource(R.string.cut)) }, onClick = { onDismiss(); onCut?.invoke() })
-            if (onColor != null) DropdownMenuItem(text = { Text(stringResource(R.string.colour_code)) }, onClick = { showColors = true })
-            if (onNameColor != null) DropdownMenuItem(text = { Text(stringResource(R.string.name_colour_ellipsis)) }, onClick = { onDismiss(); onNameColor() })
-            if (onTogglePin != null) {
-                DropdownMenuItem(text = { Text(if (pinned) stringResource(R.string.unpin_from_sidebar) else stringResource(R.string.pin_to_sidebar)) }, onClick = { onDismiss(); onTogglePin() })
+        }
+    } else {
+        GroupedDropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
+            DropdownMenuGroup(shapes = MenuDefaults.groupShape(0, groupCount)) {
+                var index = 0
+                if (onPreview != null) {
+                    EntryMenuAction(index++, actionCount, { Text(stringResource(R.string.preview)) }) {
+                        onDismiss(); onPreview()
+                    }
+                }
+                EntryMenuAction(index++, actionCount, { Text(stringResource(R.string.rename)) }) {
+                    onDismiss(); onRename?.invoke()
+                }
+                if (onMoveTo != null) {
+                    EntryMenuAction(index++, actionCount, { Text(stringResource(R.string.move_to_folder_ellipsis)) }) {
+                        onDismiss(); onMoveTo()
+                    }
+                }
+                EntryMenuAction(index++, actionCount, { Text(stringResource(R.string.copy)) }) {
+                    onDismiss(); onCopy?.invoke()
+                }
+                EntryMenuAction(index++, actionCount, { Text(stringResource(R.string.cut)) }) {
+                    onDismiss(); onCut?.invoke()
+                }
+                if (onColor != null) {
+                    EntryMenuAction(index++, actionCount, { Text(stringResource(R.string.colour_code)) }) {
+                        showColors = true
+                    }
+                }
+                if (onNameColor != null) {
+                    EntryMenuAction(index++, actionCount, { Text(stringResource(R.string.name_colour_ellipsis)) }) {
+                        onDismiss(); onNameColor()
+                    }
+                }
+                if (onTogglePin != null) {
+                    EntryMenuAction(index, actionCount, {
+                        Text(if (pinned) stringResource(R.string.unpin_from_sidebar) else stringResource(R.string.pin_to_sidebar))
+                    }) {
+                        onDismiss(); onTogglePin()
+                    }
+                }
             }
-            DropdownMenuItem(text = { Text(deleteLabel) }, onClick = { onDismiss(); onDelete?.invoke() })
             if (onShare != null) {
-                HorizontalDivider(color = palette.border.toComposeColor())
-                DropdownMenuItem(text = { Text(stringResource(R.string.share)) }, onClick = { onDismiss(); onShare() })
-                DropdownMenuItem(text = { Text(stringResource(R.string.save_copy_ellipsis)) }, onClick = { onDismiss(); onSaveCopy?.invoke() })
-                DropdownMenuItem(text = { Text(stringResource(R.string.export_pdf)) }, onClick = { onDismiss(); onExportPdf?.invoke() })
+                Spacer(Modifier.height(MenuDefaults.GroupSpacing))
+                DropdownMenuGroup(shapes = MenuDefaults.groupShape(1, groupCount)) {
+                    EntryMenuAction(0, 3, { Text(stringResource(R.string.share)) }) {
+                        onDismiss(); onShare()
+                    }
+                    EntryMenuAction(1, 3, { Text(stringResource(R.string.save_copy_ellipsis)) }) {
+                        onDismiss(); onSaveCopy?.invoke()
+                    }
+                    EntryMenuAction(2, 3, { Text(stringResource(R.string.export_pdf)) }) {
+                        onDismiss(); onExportPdf?.invoke()
+                    }
+                }
+            }
+            Spacer(Modifier.height(MenuDefaults.GroupSpacing))
+            DropdownMenuGroup(shapes = MenuDefaults.groupShape(groupCount - 1, groupCount)) {
+                EntryMenuAction(0, 1, { Text(deleteLabel) }) { onDismiss(); onDelete?.invoke() }
             }
         }
     }
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun EntryMenuAction(
+    index: Int,
+    count: Int,
+    text: @Composable () -> Unit,
+    onClick: () -> Unit,
+) {
+    DropdownMenuItem(
+        onClick = onClick,
+        text = text,
+        shape = MenuDefaults.itemShape(index, count).shape,
+    )
 }
 
 /** Slanted parallel lines that shade a colour-coded card without hiding what's on it. */
@@ -2286,23 +2585,32 @@ private fun PrimaryButton(icon: ImageVector, label: String, modifier: Modifier =
 }
 
 /** What an empty explorer body says, the picture above it, and whether it offers to make something. */
-private class EmptyState(val text: String, val art: EmptyArt? = null, val offersCreate: Boolean = false)
+private class EmptyState(val text: String, val art: EmptyArt? = null, val offersCreate: Boolean = false, val loading: Boolean = false)
 
 /** An empty body: a picture, what is (not) here, and ways to fill it; scrolls when the window is short. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun EmptyPane(text: String, art: EmptyArt? = null, actions: (@Composable FlowRowScope.() -> Unit)? = null) {
+internal fun EmptyPane(
+    text: String,
+    art: EmptyArt? = null,
+    actions: (@Composable FlowRowScope.() -> Unit)? = null,
+    loading: Boolean = false,
+) {
     BoxWithConstraints(Modifier.fillMaxSize().imePadding()) {
         Column(
             Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).heightIn(min = maxHeight).padding(horizontal = 24.dp, vertical = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
+            if (loading) {
+                CircularProgressIndicator()
+                Spacer(Modifier.height(16.dp))
+            }
             if (art != null) {
                 EmptyIllustration(art)
                 Spacer(Modifier.height(20.dp))
             }
-            Text(text, color = LocalPalette.current.textDim.toComposeColor(), fontSize = 14.sp, textAlign = TextAlign.Center, modifier = Modifier.widthIn(max = 360.dp))
+            Text(text, color = LocalPalette.current.textDim.toComposeColor(), style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center, modifier = Modifier.widthIn(max = 360.dp))
             if (actions != null) {
                 Spacer(Modifier.height(20.dp))
                 FlowRow(

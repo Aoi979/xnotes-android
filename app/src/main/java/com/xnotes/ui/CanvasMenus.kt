@@ -50,6 +50,12 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import com.xnotes.R
 import com.xnotes.core.model.DrawStyle
@@ -76,6 +82,14 @@ interface SelectionMenuHost : SwatchHost {
     fun copySelection()
     fun bringToFront()
     fun duplicateSelection()
+
+    /** Canvas ink can opt into a mathematical 2×2 map. Other document types omit the action. */
+    val supportsLinearTransform: Boolean get() = false
+    fun canLinearTransformSelection(): Boolean = false
+    fun openLinearTransform() {}
+
+    fun canEditCuteSelection(): Boolean = false
+    fun editCuteSelection() {}
 
     /** The audio pill selected on its own, which the bar offers to play. */
     fun selectedAudio(): com.xnotes.core.model.AudioItem?
@@ -169,99 +183,129 @@ fun SelectionMenu(
     } else {
         rect.bottom.toFloat() + gap
     }
-    val xDp = with(density) { xPx.toDp() }
-    val yDp = with(density) { yPx.toDp() }
+    val edge = with(density) { 8.dp.roundToPx() }
+    val position = remember(xPx, yPx, edge) {
+        object : PopupPositionProvider {
+            override fun calculatePosition(anchorBounds: IntRect, windowSize: IntSize, layoutDirection: LayoutDirection, popupContentSize: IntSize) = IntOffset(
+                (anchorBounds.left + xPx.roundToInt()).coerceIn(edge, maxOf(edge, windowSize.width - popupContentSize.width - edge)),
+                (anchorBounds.top + yPx.roundToInt()).coerceIn(edge, maxOf(edge, windowSize.height - popupContentSize.height - edge)),
+            )
+        }
+    }
 
     CompositionLocalProvider(LocalTipSide provides tipSideFor(barAbove)) {
-        Row(
-            modifier = Modifier
-                .offset(xDp, yDp)
-                .clip(MaterialTheme.shapes.medium)
-                .background(palette.menuBg.toComposeColor())
-                .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.medium),
-        ) {
-            if (audio != null) {
-                val playing = AudioPlayback.session?.let { it.item === audio && it.playing } == true
-                ActionIcon(if (playing) XnotesIcons.pause else XnotesIcons.play, stringResource(if (playing) R.string.audio_pause else R.string.audio_play)) { host.playSelectedAudio() }
-            }
-            ActionIcon(XnotesIcons.trash, stringResource(R.string.delete), shortcut = Keys.DELETE) { host.deleteSelection() }
-            ActionIcon(XnotesIcons.cut, stringResource(R.string.cut)) { host.cutSelection() }
-            ActionIcon(XnotesIcons.copy, stringResource(R.string.copy)) { host.copySelection(); host.dismissSelectionMenu() }
-            ActionIcon(XnotesIcons.front, stringResource(R.string.bring_to_front)) { host.bringToFront(); host.dismissSelectionMenu() }
-            ActionIcon(XnotesIcons.duplicate, stringResource(R.string.duplicate)) { host.duplicateSelection() }
-            Box {
-                ActionIcon(XnotesIcons.more, stringResource(R.string.more)) { overflowOpen = true }
-                DropdownMenu(
-                    expanded = overflowOpen,
-                    onDismissRequest = { overflowOpen = false },
-                    properties = PopupProperties(focusable = false),
-                ) {
-                    // A lone recording's own actions come first.
-                    if (audio != null) {
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.rename)) },
-                            onClick = { overflowOpen = false; renamingAudio = audio },
-                        )
-                        onSaveAudio?.let { save ->
+        // A real popup owns the floating bar's input region above the AndroidView canvas.
+        // An offset Row can be visible outside its measured bounds but lose hit testing
+        // to the full-size interop view underneath. Keep focus/keyboard with the editor.
+        Popup(popupPositionProvider = position, properties = PopupProperties(focusable = false, dismissOnClickOutside = false)) {
+            Row(
+                modifier = Modifier
+                    .clip(MaterialTheme.shapes.medium)
+                    .background(palette.menuBg.toComposeColor())
+                    .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.medium),
+            ) {
+                if (audio != null) {
+                    val playing = AudioPlayback.session?.let { it.item === audio && it.playing } == true
+                    ActionIcon(if (playing) XnotesIcons.pause else XnotesIcons.play, stringResource(if (playing) R.string.audio_pause else R.string.audio_play)) { host.playSelectedAudio() }
+                }
+                ActionIcon(XnotesIcons.trash, stringResource(R.string.delete), shortcut = Keys.DELETE) { host.deleteSelection() }
+                ActionIcon(XnotesIcons.cut, stringResource(R.string.cut)) { host.cutSelection() }
+                ActionIcon(XnotesIcons.copy, stringResource(R.string.copy)) { host.copySelection(); host.dismissSelectionMenu() }
+                ActionIcon(XnotesIcons.front, stringResource(R.string.bring_to_front)) { host.bringToFront(); host.dismissSelectionMenu() }
+                ActionIcon(XnotesIcons.duplicate, stringResource(R.string.duplicate)) { host.duplicateSelection() }
+                Box {
+                    ActionIcon(XnotesIcons.more, stringResource(R.string.more)) { overflowOpen = true }
+                    DropdownMenu(
+                        expanded = overflowOpen,
+                        onDismissRequest = { overflowOpen = false },
+                        properties = PopupProperties(focusable = false),
+                    ) {
+                        // A lone recording's own actions come first.
+                        if (audio != null) {
                             DropdownMenuItem(
-                                text = { Text(stringResource(R.string.audio_save)) },
-                                onClick = { overflowOpen = false; save(audio) },
+                                text = { Text(stringResource(R.string.rename)) },
+                                onClick = { overflowOpen = false; renamingAudio = audio },
+                            )
+                            onSaveAudio?.let { save ->
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.audio_save)) },
+                                    onClick = { overflowOpen = false; save(audio) },
+                                )
+                            }
+                            onShareAudio?.let { share ->
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.audio_share)) },
+                                    onClick = { overflowOpen = false; share(audio) },
+                                )
+                            }
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.audio_unlink)) },
+                                onClick = { overflowOpen = false; host.unlinkSelectedAudio() },
+                            )
+                            androidx.compose.material3.HorizontalDivider(color = palette.border.toComposeColor())
+                        }
+                        // Empty when nothing selected carries ink or a fill: an image or a text box has
+                        // no colour-and-width pair to restyle.
+                        val styles = host.selectionStyles()
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.change_style)) },
+                            enabled = styles.isNotEmpty() || host.selectionFills().isNotEmpty(),
+                            onClick = { overflowOpen = false; styleOpen = true },
+                        )
+                        if (host.canLabelSelection()) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.shape_label)) },
+                                onClick = { overflowOpen = false; host.labelSelection() },
                             )
                         }
-                        onShareAudio?.let { share ->
+                        if (host.canRerouteSelection()) {
                             DropdownMenuItem(
-                                text = { Text(stringResource(R.string.audio_share)) },
-                                onClick = { overflowOpen = false; share(audio) },
+                                text = { Text(stringResource(R.string.connector_reroute)) },
+                                onClick = { overflowOpen = false; host.rerouteSelection() },
+                            )
+                        }
+                        val mirrors = host.canMirrorSelection()
+                        if (host.canEditCuteSelection()) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.cute_edit)) },
+                                onClick = { overflowOpen = false; host.editCuteSelection() },
+                            )
+                        }
+                        if (host.supportsLinearTransform) {
+                            val canTransform = host.canLinearTransformSelection()
+                            DropdownMenuItem(
+                                text = {
+                                    Column {
+                                        Text(stringResource(R.string.canvas_linear_transform))
+                                        if (!canTransform) Text(stringResource(R.string.canvas_math_ink_only), style = MaterialTheme.typography.bodySmall)
+                                    }
+                                },
+                                enabled = canTransform,
+                                onClick = { overflowOpen = false; host.openLinearTransform() },
                             )
                         }
                         DropdownMenuItem(
-                            text = { Text(stringResource(R.string.audio_unlink)) },
-                            onClick = { overflowOpen = false; host.unlinkSelectedAudio() },
+                            text = { Text(stringResource(R.string.mirror_left_right)) },
+                            enabled = mirrors,
+                            onClick = { overflowOpen = false; host.mirrorSelection(upsideDown = false) },
                         )
-                        androidx.compose.material3.HorizontalDivider(color = palette.border.toComposeColor())
-                    }
-                    // Empty when nothing selected carries ink or a fill: an image or a text box has
-                    // no colour-and-width pair to restyle.
-                    val styles = host.selectionStyles()
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.change_style)) },
-                        enabled = styles.isNotEmpty() || host.selectionFills().isNotEmpty(),
-                        onClick = { overflowOpen = false; styleOpen = true },
-                    )
-                    if (host.canLabelSelection()) {
                         DropdownMenuItem(
-                            text = { Text(stringResource(R.string.shape_label)) },
-                            onClick = { overflowOpen = false; host.labelSelection() },
+                            text = { Text(stringResource(R.string.mirror_upside_down)) },
+                            enabled = mirrors,
+                            onClick = { overflowOpen = false; host.mirrorSelection(upsideDown = true) },
                         )
-                    }
-                    if (host.canRerouteSelection()) {
                         DropdownMenuItem(
-                            text = { Text(stringResource(R.string.connector_reroute)) },
-                            onClick = { overflowOpen = false; host.rerouteSelection() },
+                            text = { Text(stringResource(R.string.lock)) },
+                            onClick = { overflowOpen = false; host.lockSelection() },
                         )
                     }
-                    val mirrors = host.canMirrorSelection()
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.mirror_left_right)) },
-                        enabled = mirrors,
-                        onClick = { overflowOpen = false; host.mirrorSelection(upsideDown = false) },
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.mirror_upside_down)) },
-                        enabled = mirrors,
-                        onClick = { overflowOpen = false; host.mirrorSelection(upsideDown = true) },
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.lock)) },
-                        onClick = { overflowOpen = false; host.lockSelection() },
-                    )
-                }
-                if (styleOpen) {
-                    // Closing settles any preview the slider left open.
-                    SelectionStylePopup(host) { host.restyleSelection(null, null); styleOpen = false }
-                }
-                renamingAudio?.let { item ->
-                    AudioNameDialog(item.name, onConfirm = { renamingAudio = null; host.renameSelectedAudio(it) }) { renamingAudio = null }
+                    if (styleOpen) {
+                        // Closing settles any preview the slider left open.
+                        SelectionStylePopup(host) { host.restyleSelection(null, null); styleOpen = false }
+                    }
+                    renamingAudio?.let { item ->
+                        AudioNameDialog(item.name, onConfirm = { renamingAudio = null; host.renameSelectedAudio(it) }) { renamingAudio = null }
+                    }
                 }
             }
         }
@@ -357,7 +401,7 @@ private fun SelectionStylePopup(host: SelectionMenuHost, onDismiss: () -> Unit) 
                     host.shownSwatches.forEachIndexed { i, c ->
                         val on = fill == c
                         Box {
-                            ColorDot(c.toComposeColor(), selected = on) {
+                            ColorDot(c.toComposeColor(), selected = on, editOnSelected = true) {
                                 if (on) {
                                     editingFill = i
                                 } else {

@@ -17,7 +17,7 @@ val keystoreProperties = Properties().apply {
 
 android {
     namespace = "com.xnotes"
-    compileSdk = 36
+    compileSdk = 37
     // Pinned toolchain for the vendored native builds (F-Droid reproducibility).
     ndkVersion = "27.0.12077973"
 
@@ -28,7 +28,7 @@ android {
         versionCode = 66
         versionName = "0.9.5"
         ndk {
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+            abiFilters += "arm64-v8a"
         }
         externalNativeBuild {
             cmake {
@@ -73,6 +73,10 @@ android {
         debug {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
+            ndk {
+                // Keep x86_64 available for local Android Emulator debug installs.
+                abiFilters += listOf("armeabi-v7a", "x86_64")
+            }
         }
         release {
             if (hasReleaseSigning) signingConfig = signingConfigs.getByName("release")
@@ -123,11 +127,12 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.activity.compose)
-    implementation(platform(libs.androidx.compose.bom))
+    implementation(platform(libs.androidx.compose.bom.alpha))
     implementation(libs.androidx.ui)
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
+    implementation(libs.androidx.graphics.shapes)
     implementation(libs.androidx.material.icons.extended)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.pdfbox.android)

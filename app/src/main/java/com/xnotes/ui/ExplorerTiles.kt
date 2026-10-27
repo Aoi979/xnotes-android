@@ -4,6 +4,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -24,6 +25,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
@@ -44,7 +46,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -308,10 +310,10 @@ internal fun GridFileTile(b: ExplorerBody, e: BrowseEntry) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(b.label(e), color = palette.text.toComposeColor(), fontSize = 13.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(b.label(e), color = palette.text.toComposeColor(), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 val meta = b.metaText(e)
                 if (meta.isNotEmpty()) {
-                    Text(meta, color = palette.textDim.toComposeColor(), fontSize = 11.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(meta, color = palette.textDim.toComposeColor(), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
             if (!selecting) EntryMenuButton(b, e, palette.textDim.toComposeColor())
@@ -339,6 +341,9 @@ internal fun FolderChipTile(b: ExplorerBody, e: BrowseEntry, height: Dp = 60.dp)
             pulse.animateTo(1.08f, tween(110))
             pulse.animateTo(1f, tween(160))
             b.host.onPulseDone(e)
+        } else {
+            // Another folder can become the drop target before this pulse finishes.
+            pulse.animateTo(1f, tween(160))
         }
     }
     val shape = MaterialTheme.shapes.small
@@ -346,7 +351,7 @@ internal fun FolderChipTile(b: ExplorerBody, e: BrowseEntry, height: Dp = 60.dp)
         Modifier
             .fillMaxWidth()
             .height(height)
-            .scale(pulse.value)
+            .graphicsLayer { scaleX = pulse.value; scaleY = pulse.value }
             .registered(b, e)
             .clip(shape)
             .background(if (active) palette.selectionBackground.toComposeColor() else Color.Transparent)
@@ -354,7 +359,6 @@ internal fun FolderChipTile(b: ExplorerBody, e: BrowseEntry, height: Dp = 60.dp)
             .border(1.dp, if (active) accent else (code ?: palette.border.toComposeColor()), shape)
             .combinedClickable(
                 interactionSource = remember { MutableInteractionSource() },
-                indication = null,
                 onClick = { b.host.onClick(e) },
                 onLongClick = { b.host.onLongClick(e) },
             )
@@ -365,9 +369,9 @@ internal fun FolderChipTile(b: ExplorerBody, e: BrowseEntry, height: Dp = 60.dp)
         Icon(XnotesIcons.folder, null, tint = if (active) onAccent else (code ?: palette.textDim.toComposeColor()), modifier = Modifier.size(22.dp))
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(b.label(e), color = if (active) onAccent else palette.text.toComposeColor(), fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(b.label(e), color = if (active) onAccent else palette.text.toComposeColor(), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val meta = b.metaOverride?.invoke(e) ?: b.counts[e.documentUri]?.let { itemsLabel(b.words, it) }
-            if (meta != null) Text(meta, color = if (active) onAccent else palette.textDim.toComposeColor(), fontSize = 11.5.sp, maxLines = 1)
+            if (meta != null) Text(meta, color = if (active) onAccent else palette.textDim.toComposeColor(), style = MaterialTheme.typography.bodySmall, maxLines = 1)
         }
         if (b.host.isPinned(e)) Icon(XnotesIcons.pin, stringResource(R.string.pinned_to_sidebar), tint = if (active) onAccent else palette.textDim.toComposeColor(), modifier = Modifier.size(14.dp))
         // Kept in select mode so the chip never changes width; there it only ends the selection.
@@ -395,9 +399,9 @@ internal fun FolderCardTile(b: ExplorerBody, e: BrowseEntry) {
         Modifier
             .alpha(if (b.host.isCut(e)) 0.4f else 1f)
             .registered(b, e)
+            .clip(shape)
             .combinedClickable(
                 interactionSource = remember { MutableInteractionSource() },
-                indication = null,
                 onClick = { b.host.onClick(e) },
                 onLongClick = { b.host.onLongClick(e) },
             ),
@@ -419,8 +423,8 @@ internal fun FolderCardTile(b: ExplorerBody, e: BrowseEntry) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(b.label(e), color = palette.text.toComposeColor(), fontSize = 13.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(b.metaText(e), color = palette.textDim.toComposeColor(), fontSize = 11.5.sp, maxLines = 1)
+                Text(b.label(e), color = palette.text.toComposeColor(), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(b.metaText(e), color = palette.textDim.toComposeColor(), style = MaterialTheme.typography.bodySmall, maxLines = 1)
             }
             if (!selecting) EntryMenuButton(b, e, palette.textDim.toComposeColor())
         }
@@ -437,18 +441,31 @@ internal fun ListRow(b: ExplorerBody, e: BrowseEntry, wide: Boolean) {
     val compact = b.view.compactRows
     val code = b.colorOf(e)?.let { codeTint(it, palette) }
     val kind = b.kind(e)
+    val where = b.whereOf?.invoke(e)
+    val supportingText = when {
+        compact -> null
+        !wide -> listOfNotNull(where, b.metaText(e).ifEmpty { null }).joinToString(" · ").ifEmpty { null }
+        else -> where
+    }
+    val rowHeight = when {
+        compact -> 40.dp
+        supportingText != null -> 72.dp
+        else -> 56.dp
+    }
     val fg = (if (selected) palette.selectionForeground else palette.text).toComposeColor()
     val dim = if (selected) fg.copy(alpha = 0.72f) else palette.textDim.toComposeColor()
     Row(
         Modifier
             .fillMaxWidth()
-            .height(if (compact) 40.dp else 56.dp)
+            .height(rowHeight)
             .alpha(if (b.host.isCut(e)) 0.4f else 1f)
             .background(if (selected) palette.selectionBackground.toComposeColor() else Color.Transparent)
             .registered(b, e)
             .combinedClickable(
                 interactionSource = remember { MutableInteractionSource() },
-                indication = null,
+                // File rows open the document or its preview; directory rows only navigate
+                // within the list and should retain the usual Material press feedback.
+                indication = if (e.isDir) LocalIndication.current else null,
                 onClick = { b.host.onClick(e) },
                 onLongClick = if (e.isDir) ({ b.host.onLongClick(e) }) else null,
             )
@@ -470,10 +487,22 @@ internal fun ListRow(b: ExplorerBody, e: BrowseEntry, wide: Boolean) {
         }
         Row(Modifier.weight(1f).padding(start = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Column(Modifier.weight(1f, fill = false)) {
-                Text(b.label(e), color = fg, fontSize = 14.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                val where = b.whereOf?.invoke(e)
-                if (!wide && !compact) Text(listOfNotNull(where, b.metaText(e).ifEmpty { null }).joinToString(" · "), color = dim, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                else if (where != null && !compact) Text(where, color = dim, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    b.label(e),
+                    color = fg,
+                    style = if (compact) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                supportingText?.let {
+                    Text(
+                        it,
+                        color = dim,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
             if (code != null && !e.isDir) Box(Modifier.size(8.dp).clip(CircleShape).background(code))
             if (b.host.isPinned(e)) Icon(XnotesIcons.pin, stringResource(R.string.pinned_to_sidebar), tint = dim, modifier = Modifier.size(14.dp))
@@ -537,7 +566,7 @@ internal fun GalleryItem(b: ExplorerBody, e: BrowseEntry, shelf: Dp) {
         Spacer(Modifier.height(10.dp))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.padding(horizontal = 4.dp)) {
             if (code != null) Box(Modifier.size(8.dp).clip(CircleShape).background(code))
-            Text(b.label(e), color = palette.text.toComposeColor(), fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(b.label(e), color = palette.text.toComposeColor(), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Spacer(Modifier.height(3.dp))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.padding(horizontal = 4.dp)) {
@@ -550,7 +579,7 @@ internal fun GalleryItem(b: ExplorerBody, e: BrowseEntry, shelf: Dp) {
                 pages > 0 -> pluralStringResource(R.plurals.pages_count, pages, pages)
                 else -> null
             }
-            Text(listOfNotNull(count, b.metaText(e).ifEmpty { null }).joinToString(" · "), color = palette.textDim.toComposeColor(), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(listOfNotNull(count, b.metaText(e).ifEmpty { null }).joinToString(" · "), color = palette.textDim.toComposeColor(), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
@@ -583,13 +612,13 @@ internal fun TimelineCard(b: ExplorerBody, e: BrowseEntry, side: Dp) {
             if (selecting) CheckRing(selected, Modifier.align(Alignment.TopStart).padding(6.dp))
         }
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(b.label(e), color = palette.text.toComposeColor(), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(b.label(e), color = palette.text.toComposeColor(), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                Text(formatClock(b.words, b.view.timelineTime(e), b.clock24, b.zone), color = palette.textDim.toComposeColor(), fontSize = 11.5.sp, maxLines = 1)
+                Text(formatClock(b.words, b.view.timelineTime(e), b.clock24, b.zone), color = palette.textDim.toComposeColor(), style = MaterialTheme.typography.bodySmall, maxLines = 1)
                 val where = b.whereOf?.invoke(e)
                 if (where != null) {
                     Icon(XnotesIcons.folder, null, tint = palette.textDim.toComposeColor(), modifier = Modifier.size(12.dp))
-                    Text(where, color = palette.textDim.toComposeColor(), fontSize = 11.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(where, color = palette.textDim.toComposeColor(), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
         }
@@ -606,7 +635,7 @@ internal fun GalleryFolderChip(b: ExplorerBody, e: BrowseEntry) {
     val shape = MaterialTheme.shapes.small
     Row(
         Modifier
-            .height(44.dp)
+            .heightIn(min = 48.dp)
             .registered(b, e)
             .clip(shape)
             .background(if (active) palette.selectionBackground.toComposeColor() else Color.Transparent)
@@ -614,7 +643,6 @@ internal fun GalleryFolderChip(b: ExplorerBody, e: BrowseEntry) {
             .border(1.dp, if (active) palette.accent.toComposeColor() else (code ?: palette.border.toComposeColor()), shape)
             .combinedClickable(
                 interactionSource = remember { MutableInteractionSource() },
-                indication = null,
                 onClick = { b.host.onClick(e) },
                 onLongClick = { b.host.onLongClick(e) },
             )
@@ -624,8 +652,8 @@ internal fun GalleryFolderChip(b: ExplorerBody, e: BrowseEntry) {
     ) {
         val fg = if (active) palette.selectionForeground.toComposeColor() else palette.text.toComposeColor()
         Icon(XnotesIcons.folder, null, tint = if (active) fg else (code ?: palette.textDim.toComposeColor()), modifier = Modifier.size(20.dp))
-        Text(b.label(e), color = fg, fontSize = 14.sp, maxLines = 1)
-        b.counts[e.documentUri]?.let { Text("$it", color = if (active) fg else palette.textDim.toComposeColor(), fontSize = 12.sp) }
+        Text(b.label(e), color = fg, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+        b.counts[e.documentUri]?.let { Text("$it", color = if (active) fg else palette.textDim.toComposeColor(), style = MaterialTheme.typography.labelMedium) }
     }
 }
 
@@ -639,7 +667,7 @@ internal fun formatClock(w: ExplorerWords, time: Long, clock24: Boolean, zone: Z
  * What Home can open with above the top folder's items: a shelf of what was opened lately, the pinned folders,
  * then a heading for the folder itself.
  */
-@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@OptIn(ExperimentalFoundationApi::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 internal fun HomeShelves(
     b: ExplorerBody,
@@ -655,8 +683,21 @@ internal fun HomeShelves(
     Column(Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
         if (recents.isNotEmpty()) {
             ShelfTitle(stringResource(R.string.recent), stringResource(R.string.see_all), onSeeAll)
+            val recentCards = recents.take(8)
             androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                items(recents.take(8).size) { i -> RecentCard(b, recents[i], onOpenRecent) }
+                items(
+                    items = recentCards,
+                    key = { it.entry.documentUri },
+                    contentType = { "recentCard" },
+                ) { recent ->
+                    Box(Modifier.animateItem(
+                        fadeInSpec = materialItemFadeSpec,
+                        placementSpec = materialItemPlacementSpec,
+                        fadeOutSpec = materialItemFadeSpec,
+                    )) {
+                        RecentCard(b, recent, onOpenRecent)
+                    }
+                }
             }
             Spacer(Modifier.height(20.dp))
         }
@@ -672,22 +713,26 @@ internal fun HomeShelves(
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         Icon(XnotesIcons.folder, null, tint = palette.textDim.toComposeColor(), modifier = Modifier.size(20.dp))
-                        Text(pin.name, color = palette.text.toComposeColor(), fontSize = 14.sp, maxLines = 1)
+                        Text(pin.name, color = palette.text.toComposeColor(), style = MaterialTheme.typography.labelLarge, maxLines = 1)
                     }
                 }
             }
             Spacer(Modifier.height(20.dp))
         }
         Row(Modifier.fillMaxWidth().padding(bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(stringResource(R.string.in_folder, rootName), color = palette.text.toComposeColor(), fontSize = 16.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
-            Text(counts, color = palette.textDim.toComposeColor(), fontSize = 12.5.sp)
+            Text(stringResource(R.string.in_folder, rootName), color = palette.text.toComposeColor(), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+            Text(counts, color = palette.textDim.toComposeColor(), style = MaterialTheme.typography.bodySmall)
         }
     }
 }
 
 /** One card on the Recent shelf: the page, its name, when it was opened and the folder it's in. */
 @Composable
-private fun RecentCard(b: ExplorerBody, r: RecentEntry, onOpen: (BrowseEntry) -> Unit) {
+private fun RecentCard(
+    b: ExplorerBody,
+    r: RecentEntry,
+    onOpen: (BrowseEntry) -> Unit,
+) {
     val palette = LocalPalette.current
     val e = r.entry
     val shape = MaterialTheme.shapes.medium
@@ -701,12 +746,12 @@ private fun RecentCard(b: ExplorerBody, r: RecentEntry, onOpen: (BrowseEntry) ->
             ThumbBadges(b, e, 6.dp)
         }
         Spacer(Modifier.height(4.dp))
-        Text(b.label(e), color = palette.text.toComposeColor(), fontSize = 13.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text(openedLabel(b.words, r.opened, b.now, b.zone), color = palette.textDim.toComposeColor(), fontSize = 11.5.sp, maxLines = 1)
+        Text(b.label(e), color = palette.text.toComposeColor(), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(openedLabel(b.words, r.opened, b.now, b.zone), color = palette.textDim.toComposeColor(), style = MaterialTheme.typography.bodySmall, maxLines = 1)
         r.where?.let { where ->
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                 Icon(XnotesIcons.folder, null, tint = palette.textDim.toComposeColor(), modifier = Modifier.size(12.dp))
-                Text(where, color = palette.textDim.toComposeColor(), fontSize = 11.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(where, color = palette.textDim.toComposeColor(), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }
@@ -717,7 +762,7 @@ private fun RecentCard(b: ExplorerBody, r: RecentEntry, onOpen: (BrowseEntry) ->
 internal fun ShelfTitle(title: String, action: String? = null, onAction: () -> Unit = {}) {
     val palette = LocalPalette.current
     Row(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(title, color = palette.text.toComposeColor(), fontSize = 16.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+        Text(title, color = palette.text.toComposeColor(), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
         if (action != null) {
             Text(action, color = palette.accent.toComposeColor(), fontSize = 13.5.sp, fontWeight = FontWeight.Medium,
                 modifier = Modifier.clip(MaterialTheme.shapes.extraSmall).clickable(onClick = onAction).padding(horizontal = 8.dp, vertical = 4.dp))

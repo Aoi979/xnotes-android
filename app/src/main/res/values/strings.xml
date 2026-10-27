@@ -271,6 +271,8 @@
     <string name="caption_cells">Cells</string>
     <string name="count_fewer">Fewer</string>
     <string name="count_more">More</string>
+    <string name="decrease_value">Decrease %1$s</string>
+    <string name="increase_value">Increase %1$s</string>
     <string name="caption_fill">Fill</string>
     <string name="caption_perfect">Perfect</string>
     <string name="caption_opacity">Opacity</string>
@@ -484,6 +486,9 @@
     <string name="new_canvas_menu">New Canvas</string>
     <string name="import_pdf">Import PDF</string>
     <string name="create_new">New</string>
+    <string name="close_create_menu">Close create menu</string>
+    <string name="create_menu_expanded">Menu expanded</string>
+    <string name="create_menu_collapsed">Menu collapsed</string>
     <string name="choose_folder_hint">Choose a folder to keep and browse your notes in.</string>
     <string name="choose_folder">Choose folder</string>
     <string name="use_app_storage">Use App Storage</string>
@@ -523,6 +528,7 @@
     <string name="export_pdf_action">Export PDF</string>
     <string name="sort_descending">Descending</string>
     <string name="sort_ascending">Ascending</string>
+    <string name="toggle_sort_order">Toggle sort order</string>
     <string name="folder">Folder</string>
     <string name="err_paste_some">Couldn’t paste some items here.</string>
     <string name="err_move_some">Couldn’t move some items.</string>
@@ -735,6 +741,7 @@
 
     <!-- About -->
     <string name="app_tagline">A handwriting notes and sketching app for Android</string>
+    <string name="unofficial_build">Unofficial modified build · based on upstream XNotes</string>
     <string name="copy_version">Copy version</string>
     <string name="help_make_better">Help make xnotes better</string>
     <string name="report_bug">Report a bug</string>
@@ -769,10 +776,27 @@
     <string name="colour">Colour</string>
     <string name="auto">Auto</string>
     <string name="margins_mm">Margins (mm)</string>
+    <string name="text_input_behavior">Input behavior</string>
     <string name="markdown_shortcuts">Markdown shortcuts</string>
     <string name="slash_commands">Slash commands</string>
     <string name="equation">Equation</string>
     <string name="select_latex_first">Select the LaTeX to set as an equation</string>
+    <string name="math_structures">Linear algebra</string>
+    <string name="math_matrix_2x2">2 × 2 matrix</string>
+    <string name="math_custom_matrix">Custom matrix…</string>
+    <string name="math_column_vector">Column vector</string>
+    <string name="math_row_vector">Row vector</string>
+    <string name="math_augmented_matrix">Augmented matrix</string>
+    <string name="math_determinant">Determinant</string>
+    <string name="math_inverse">Matrix inverse</string>
+    <string name="math_transpose">Transpose</string>
+    <string name="math_rank">Matrix rank</string>
+    <string name="math_matrix_vector_equation">Matrix-vector equation</string>
+    <string name="math_custom_matrix_title">Insert a matrix</string>
+    <string name="math_brackets">Brackets</string>
+    <string name="math_fence_square">Square brackets</string>
+    <string name="math_fence_round">Round brackets</string>
+    <string name="math_fence_determinant">Determinant bars</string>
     <string name="insert_date">Date</string>
     <string name="insert_time">Time</string>
     <string name="page_break">Page break</string>
@@ -824,6 +848,7 @@
 
     <!-- Colour picker -->
     <string name="swatches">Swatches</string>
+    <string name="edit_saved_swatch">Edit this swatch</string>
     <string name="spectrum">Spectrum</string>
     <string name="caption_recent">Recent</string>
 
@@ -1089,4 +1114,144 @@
     <string name="toolbar_size_compact">Compact</string>
     <string name="toolbar_size_regular">Regular</string>
     <string name="toolbar_size_comfortable">Comfortable</string>
+    <string name="canvas_math_tools">Linear algebra</string>
+    <string name="canvas_math_intro">Add a writing frame or diagram, then work on it with your pen.</string>
+    <string name="canvas_math_frame">Matrix frame</string>
+    <string name="canvas_math_vectors">Vectors</string>
+    <string name="canvas_math_map">Linear map</string>
+    <string name="canvas_math_guides">Cell guides</string>
+    <string name="canvas_math_augmented">Separate the final column</string>
+    <string name="canvas_math_plane_only">Blank coordinate plane</string>
+    <string name="canvas_math_sum">Show vector sum</string>
+    <string name="canvas_math_grid">Grid</string>
+    <string name="canvas_math_draw_vector">Draw a vector with the pen</string>
+    <string name="canvas_math_vector_u">Vector u</string>
+    <string name="canvas_math_vector_v">Vector v</string>
+    <string name="canvas_math_native_hint">Move or resize the inserted selection, then switch to your pen. Use More → Lock to protect guides while erasing.</string>
+    <string name="canvas_math_preview">Linear algebra preview</string>
+    <string name="canvas_math_input_error">Enter finite numbers between −20 and 20.</string>
+    <string name="canvas_linear_transform">Linear transform</string>
+    <string name="canvas_math_transform_hint">Apply A to the selected handwriting and shapes. Positive y points upward; pen widths stay the same.</string>
+    <string name="canvas_math_transform_legend">Faint: original · Solid: transformed · Cross: origin</string>
+    <string name="canvas_math_origin">Origin</string>
+    <string name="canvas_math_bottom_left">Bottom left</string>
+    <string name="canvas_math_center">Selection centre</string>
+    <string name="canvas_math_keep_original">Keep original</string>
+    <string name="canvas_math_apply">Apply</string>
+    <string name="canvas_math_singular">This matrix collapses the plane to a line or point.</string>
+    <string name="canvas_math_identity">Identity</string>
+    <string name="canvas_math_rotate">Rotate 90°</string>
+    <string name="canvas_math_shear">Shear</string>
+    <string name="canvas_math_reflect">Reflect</string>
+    <string name="canvas_math_project">Project</string>
+    <string name="canvas_math_select_hint">To transform handwriting: lasso the ink, then choose More → Linear transform.</string>
+    <string name="canvas_math_ink_only">Select only handwriting and shapes.</string>
+
+    <!-- CuTe Canvas workbench -->
+    <string name="cute_title">CuTe Layout</string>
+    <string name="cute_subtitle">Layout algebra · thread/value mapping</string>
+    <string name="cute_edit">Edit CuTe layout</string>
+    <string name="cute_examples">Examples</string>
+    <string name="cute_insert">Insert diagram</string>
+    <string name="cute_insert_copy_set">Insert S and D side by side</string>
+    <string name="cute_insert_mma_set">Insert A, B and C in GEMM arrangement</string>
+    <string name="cute_update">Update diagram</string>
+    <string name="cute_copy_cpp">Copy C++</string>
+    <string name="cute_copied">Copied</string>
+    <string name="cute_save_error">Could not save the diagram. Please try again.</string>
+    <string name="cute_syntax_hint">Nested Shape:Stride, e.g. (8,8):(1,8). Static _8 notation is accepted.</string>
+    <string name="cute_cotarget">Cotarget (optional)</string>
+    <string name="cute_profile">Profile (optional), e.g. (1,1)</string>
+    <string name="cute_operand_b">B · Layout or tile(4,2)</string>
+    <string name="cute_offsets">Offset layout</string>
+    <string name="cute_tv_hint">T/V numbering always uses LayoutLeft within each shape mode, independent of Stride. CuTe uses m + M·n for the output tile. The alternate decoder only changes output coordinates; it never renumbers T/V.</string>
+    <string name="cute_result">Result R</string>
+    <string name="cute_input">Input A</string>
+    <string name="cute_use_result">Use R as A</string>
+    <string name="cute_mapping_gaps">%1$d repeated offsets · %2$d unfilled addresses. Tap a cell to inspect owners.</string>
+    <string name="cute_grouped_axes">For this rank &gt; 2 layout: mode 0 runs down; all remaining modes are grouped to the right. The printed structure is unchanged.</string>
+    <string name="cute_window">Rows %1$d–%2$d · columns %3$d–%4$d. Insert saves this window and the full editable source.</string>
+    <string name="cute_reedit_hint">To edit again, select the diagram and tap CuTe in the toolbar, or More → Edit CuTe layout. You can write around it or lock it in place.</string>
+    <string name="cute_grid_accessibility">CuTe layout, %1$d rows and %2$d columns. Tap to inspect a cell; pinch to zoom.</string>
+    <string name="cute_gestures">Tap to trace · drag/pinch to explore</string>
+    <string name="cute_fit">Fit</string>
+    <string name="cute_unmapped">No thread/value maps to this cell.</string>
+    <string name="cute_help">Syntax and scope</string>
+    <string name="cute_help_body">All numbers are static integers. A accepts nested Shape:Stride or a shape with compact column-major strides. B accepts a Layout, an integer, or a by-mode tile such as tile(4,2) or tile(4:2,2:1). A shape tuple (4,2) in B means a by-mode tile. Coalesce optionally accepts a tuple profile. Complement without a cotarget preserves its terminal size-1 mode.\n\nUp to 65,536 domain elements; positive shapes and nonnegative strides. Charts show windows of at most 32×32 cells. Dynamic types, basis-valued strides, Swizzle, and GPU execution are not included.\n\nTV uses NVIDIA print_latex_tv colors and orientation. Colors repeat every 8 threads; the T label identifies the thread. Repeated mappings show the first owner and +; tap for all owners.\n\nReference: CUTLASS dc45f979ae33.</string>
+    <string name="cute_op_layout">A coordinate maps to an integer offset through Shape and Stride.</string>
+    <string name="cute_op_coalesce">Merge compatible adjacent modes and remove size-1 modes, preserving every in-domain offset.</string>
+    <string name="cute_op_filter">Remove broadcast (stride-0) and size-1 modes, then coalesce.</string>
+    <string name="cute_op_composition">R(c) = A(B(c)). Tap a result cell to follow the mapping.</string>
+    <string name="cute_op_complement">Build the ordered layout of gaps/repetitions left by A, optionally up to a cotarget.</string>
+    <string name="cute_op_right_inverse">A(R(i)) = i on the contiguous range that can be inverted.</string>
+    <string name="cute_op_left_inverse">R(A(i)) = i for injective layouts. Broadcast layouts produce a quasi-inverse.</string>
+    <string name="cute_op_divide">Split A into tile and rest: A ∘ (B, complement(B, size(A))). A tile(...) applies this by mode.</string>
+    <string name="cute_op_product">Repeat A according to B: (A, complement(A) ∘ B).</string>
+    <string name="cute_op_zipped">Apply the logical operation, then group all tile modes together and all rest/repetition modes together.</string>
+    <string name="cute_op_tiled">Apply the logical operation; keep the tile grouped and unpack the rest/repetition modes.</string>
+    <string name="cute_op_flat">Apply the logical operation, then unpack both tile and rest/repetition groups by one level.</string>
+    <string name="cute_op_blocked">Repeat A as blocks in B order, pairing A and B modes. Both operands are layouts.</string>
+    <string name="cute_op_raked">Interleave A with B, reversing the pairing order used by blocked_product.</string>
+    <string name="cute_error_syntax">Check the syntax: Shape:Stride or tile(...). Parentheses must match.</string>
+    <string name="cute_error_congruence">Shape and Stride must have exactly the same nested tuple structure.</string>
+    <string name="cute_error_integer">Use positive Shape values and nonnegative integer Stride values (up to 1,000,000,000).</string>
+    <string name="cute_error_limit">Input exceeds the supported range: 65,536 elements, depth 8, 64 leaves, 2,048 characters per operand.</string>
+    <string name="cute_error_tiler">The tile profile does not match the layout rank. Check the number and nesting of modes.</string>
+    <string name="cute_error_complement">This stride pattern does not admit the required CuTe complement. Check for overlapping modes.</string>
+    <string name="cute_error_divisibility">The operands violate a CuTe shape/stride divisibility condition. This operation has no supported Layout result.</string>
+    <string name="cute_error_tv_rank">TV view needs exactly two top-level modes: (Thread, Value). Choose Offset layout or a rank-2 result.</string>
+    <string name="cute_error_tile_size">M and N must be positive integers with M×N ≤ 65,536.</string>
+    <string name="cute_error_tv_outside">Some offsets fall outside the M×N tile. Enlarge the tile or check the layout.</string>
+    <string name="cute_error_generic">This input could not be evaluated. Check the layout and operation.</string>
+
+    <!-- CuTe hardware workbench -->
+    <string name="cute_major_hint">Build Stride for the entire nested Shape: LayoutLeft makes the first leaf mode contiguous; LayoutRight makes the last leaf mode contiguous. T/V numbering remains LayoutLeft. These are construction buttons, not T/V numbering settings.</string>
+    <string name="cute_use_base">Use base R as A</string>
+    <string name="cute_swizzle_hint">Apply XOR Swizzle to result element offsets: Swizzle ∘ offset ∘ R. The algebra above operates on the base layout.</string>
+    <string name="cute_mma_hint">AtomLayoutMNK replicates atoms across M/N/K. PermutationMNK accepts _, integer tile extents, or dense layouts. A=(M,K), B=(N,K), C=(M,N).</string>
+    <string name="cute_copy_source">Layout construction</string>
+    <string name="cute_atom_elements">Atom traits extracted from native CuTe. Offsets count elements of the selected Copy_Atom value type, not bits.</string>
+    <string name="cute_copy_hint">Thread and value layouts combine with raked_product. Their sizes must be multiples of the atom reference T/V sizes.</string>
+    <string name="cute_copy_sides">S: source · D: destination · R: atom reference. Repeated owners can represent broadcast/address-provider lanes.</string>
+    <string name="cute_descriptor_hint">This GMMA operand is a shared-memory descriptor. The diagram shows logical coordinates; register ownership and a physical SMEM layout are not inferred.</string>
+    <string name="cute_partition_title">Tile partition: %1$d threads, %2$d values/thread. Select a thread to highlight its fragment.</string>
+    <string name="cute_all_threads">All threads</string>
+    <string name="cute_thread_range">Thread index is outside this layout.</string>
+    <string name="cute_tma_scope">Tiled TMA: 1–5 dimensions, interleave NONE, 1/2/4/8-byte elements. Dimension 0 is contiguous; its elementStride is ignored. Analysis only; no GPU execution or opaque descriptor generation.</string>
+    <string name="cute_tma_strides">Outer GMEM strides (bytes)</string>
+    <string name="cute_tma_origin">Tile origin (coordinates)</string>
+    <string name="cute_tma_element">Element size (bytes)</string>
+    <string name="cute_tma_analysis">SMEM row pitch %1$d B · allocation %2$d B · payload %3$d B. Cells show byte offsets and starting 4-byte bank. Bank colors alone do not measure conflicts.</string>
+    <string name="cute_error_swizzle">Swizzle requires B=0…10, M≥0, |S|≥B, M+|S|+B≤30 and offset in [0,2³⁰).</string>
+    <string name="cute_error_hardware_layout">Use a dense, non-overlapping thread/permutation layout. MNK has at most 3 modes; each tile extent must be divisible by atom extent × atom repetitions.</string>
+    <string name="cute_error_copy_atom">TiledCopy thread/value counts must be multiples of the selected atom reference counts. Choose compatible T/V layouts or MMA operand.</string>
+    <string name="cute_error_tma_shape">TMA needs 1–5 matching dimensions: globalDim 1…2³², boxDim 1…256, elementStrides 1…8, signed 32-bit origins and 1/2/4/8-byte elements. Visualization is limited to 65,536 elements.</string>
+    <string name="cute_error_tma_alignment">GMEM base must align to 16 B (128 B with swizzle). SMEM base must align to 128 B and be in [0,2³⁰].</string>
+    <string name="cute_error_tma_swizzle">Inner box size in bytes must be a multiple of 16 and no larger than the enabled 32/64/128 B swizzle span.</string>
+    <string name="cute_error_tma_strides">Supply rank−1 byte strides. Each must be positive, a multiple of 16, below 2⁴⁰ and large enough to contain the preceding dimension.</string>
+    <string name="cute_retile_hint">Reinterpret a reference fragment (V,M,N,…) into copy atom value groups. retile_S and retile_D use the same reference mapping; no data is moved.</string>
+    <string name="cute_output_decode">Output offset → tile coordinates</string>
+    <string name="cute_domain_index">Domain index i=%1$d (T + threads × V in TV view; separate from the memory offset)</string>
+    <string name="cute_workspace_label">Workspace</string>
+    <string name="cute_workspace_algebra">Layout algebra</string>
+    <string name="cute_workspace_mma">Tiled MMA</string>
+    <string name="cute_workspace_copy">Tiled copy</string>
+    <string name="cute_workspace_tma">TMA transfer</string>
+    <string name="cute_inputs_title">Layout input</string>
+    <string name="cute_stride_shortcuts">Stride construction shortcuts</string>
+    <string name="cute_operation_title">Operation</string>
+    <string name="cute_view_title">Mapping view</string>
+    <string name="cute_tv_layout">TV layout</string>
+    <string name="cute_calculation_title">Evaluation</string>
+    <string name="cute_step_input">Input layout</string>
+    <string name="cute_step_operation">Apply operation</string>
+    <string name="cute_step_result">Result layout</string>
+    <string name="cute_step_offset_mapping">Element address mapping</string>
+    <string name="cute_metric_size">Size</string>
+    <string name="cute_metric_cosize">Cosize</string>
+    <string name="cute_metric_rank">Rank</string>
+    <string name="cute_metric_depth">Depth</string>
+    <string name="cute_show_details">Show computation details</string>
+    <string name="cute_hide_details">Hide computation details</string>
+    <string name="cute_cell_trace_title">Selected cell trace</string>
 </resources>

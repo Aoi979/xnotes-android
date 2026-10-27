@@ -13,6 +13,7 @@ import com.xnotes.core.infinite.MeshPart
 import com.xnotes.core.model.CanvasItem
 import com.xnotes.core.model.ImageItem
 import com.xnotes.core.model.Rgba
+import com.xnotes.platform.renderTrace
 import java.util.IdentityHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
 import kotlin.math.floor
@@ -296,6 +297,8 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
         imageShader = null
         minimapShader = null
         glowShader = null
+        haloKey = null
+        liftHaloKey = null
         glowTarget.onContextCreated(contextGen)
         try {
             ink = InkShader(contextGen)
@@ -314,10 +317,15 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
     }
 
     override fun drawContent(frame: FrameState) {
-        drainEdits()
-        textures.beginFrame()
-        textures.uploadPending()
-        glowTarget.resize(frame.widthPx, frame.heightPx, contextGen)
+        renderTrace("xnotes.canvas.draw") { drawScene(frame) }
+    }
+
+    private fun drawScene(frame: FrameState) {
+        renderTrace("xnotes.canvas.applyEdits") { drainEdits() }
+        renderTrace("xnotes.canvas.textures") {
+            textures.beginFrame()
+            textures.uploadPending()
+        }
         val program = ink ?: return
         if (program.contextGen != contextGen) return
         if (records.isEmpty() && wetParts.isEmpty() && tailParts.isEmpty()) {
@@ -334,7 +342,7 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
             frame.scrollY - camChunkY * GeometryStore.CHUNK_SIZE,
             frame.zoom, frame.widthPx.toDouble(), frame.heightPx.toDouble(),
         )
-        if (!store.bindForDraw(contextGen)) return
+        if (!renderTrace("xnotes.canvas.upload") { store.bindForDraw(contextGen) }) return
         store.bindAttributes(program)
 
 
@@ -343,7 +351,7 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
         GLES30.glEnable(GLES30.GL_BLEND)
         GLES30.glBlendFunc(GLES30.GL_SRC_ALPHA, GLES30.GL_ONE_MINUS_SRC_ALPHA)
 
-        collectVisible(frame)
+        renderTrace("xnotes.canvas.cull") { collectVisible(frame) }
         lastVisibleItems = visible.size
         lastDrawCalls = 0
 
@@ -534,13 +542,13 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
         camChunkY: Double,
     ) {
         val shader = glowShader ?: return
-        if (!glowTarget.ready) return
         val glowing = lifted.mapNotNull { records[it] }
             .filter { record -> record.parts.any { it.pass == InkPass.GLOW } }
         if (glowing.isEmpty()) {
             liftHaloKey = null
             return
         }
+        ensureGlowTarget(frame)
         val key = "$revision|${frame.zoom}|${frame.scrollX}|${frame.scrollY}|${frame.widthPx}x${frame.heightPx}"
         val since = liftAt.since(liftHaloAt)
         val driftPx = kotlin.math.hypot(since.dx, since.dy) * frame.zoom
@@ -735,12 +743,12 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
         camChunkY: Double,
     ) {
         val shader = glowShader ?: return
-        if (!glowTarget.ready) return
         val glowing = visible.filter { record -> record.parts.any { it.pass == InkPass.GLOW } }
         if (glowing.isEmpty()) {
             haloKey = null
             return
         }
+        ensureGlowTarget(frame)
         val key = "$revision|${frame.zoom}|${frame.scrollX}|${frame.scrollY}|${frame.widthPx}x${frame.heightPx}"
         if (key != haloKey) {
             buildHaloLayer(program, glowing, frame, camChunkX, camChunkY)
@@ -809,7 +817,7 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
     ) {
         val shader = glowShader ?: return
         val spec = part.glow ?: return
-        if (!glowTarget.ready) return
+        ensureGlowTarget(frame)
         val bounds = lift.bounds(record.bounds)
 
         for (halo in 0 until 2) {
@@ -871,6 +879,10 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
         from.bindForDraw(contextGen)
         from.bindAttributes(program)
         drawGlowBody(program, from, part)
+    }
+
+    private fun ensureGlowTarget(frame: FrameState) {
+        renderTrace("xnotes.canvas.glowBuffers") { glowTarget.resize(frame.widthPx, frame.heightPx, contextGen) }
     }
 
     /**

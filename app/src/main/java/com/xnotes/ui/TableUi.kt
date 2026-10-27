@@ -132,11 +132,11 @@ fun TableDialog(editor: Editor, table: FlowTable?, onDismiss: () -> Unit) {
                     update(s = style.copy(lineColor = it))
                 }
                 Spacer(Modifier.size(6.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    for (b in BORDER_CHOICES) {
-                        ModeChip(stringResource(b.labelRes), style.borders == b) { update(s = style.copy(borders = b)) }
-                    }
-                }
+                ExpressiveChoiceGroup(
+                    options = BORDER_CHOICES.map { it to stringResource(it.labelRes) },
+                    selected = style.borders,
+                    onSelect = { update(s = style.copy(borders = it)) },
+                )
                 Spacer(Modifier.size(6.dp))
                 SwitchRow(stringResource(R.string.table_header_row), style.headerRow) { update(s = style.copy(headerRow = it)) }
                 SwitchRow(stringResource(R.string.table_banded_rows), style.banded) { update(s = style.copy(banded = it)) }
@@ -159,10 +159,10 @@ fun TableDialog(editor: Editor, table: FlowTable?, onDismiss: () -> Unit) {
                     }
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    ModeChip(stringResource(R.string.reset), false) {
+                    TextButton(onClick = {
                         val factory = TableDefaults()
                         update(factory.rows, factory.cols, factory.style)
-                    }
+                    }) { Text(stringResource(R.string.reset)) }
                 }
             }
         },
@@ -269,7 +269,7 @@ private fun ColorRow(
     val palette = LocalPalette.current
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
         Text(label, color = palette.textDim.toComposeColor(), fontSize = 13.sp, modifier = Modifier.width(96.dp))
-        ModeChip(stringResource(R.string.auto), value == null) { onChange(null) }
+        ModeChoiceButton(stringResource(R.string.auto), value == null) { onChange(null) }
         Spacer(Modifier.width(8.dp))
         ColorPickerDot(value, custom = value != null, onPick = { onChange(it) }, dismissOnPick = false) { d, p ->
             ColorPickerPopup(value ?: auto, editor.recentColors, d, p)

@@ -17,8 +17,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.Transition
+import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -54,6 +55,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -91,6 +93,12 @@ import com.xnotes.canvas.StylusButtonLatch
 import com.xnotes.ui.Editor
 import com.xnotes.ui.Toolbar
 import com.xnotes.ui.ToolbarAround
+import com.xnotes.ui.documentBackstageMotion
+import com.xnotes.ui.documentEnter
+import com.xnotes.ui.documentExit
+import com.xnotes.ui.documentNavigationDistancePx
+import com.xnotes.ui.materialHintEnter
+import com.xnotes.ui.materialHintExit
 import com.xnotes.ui.icons.XnotesIcons
 import com.xnotes.ui.theme.LocalPalette
 import com.xnotes.ui.theme.XnotesTheme
@@ -162,6 +170,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val context = LocalContext.current
             val ed = remember { Editor(context).also { editor = it } }
+            DisposableEffect(ed) { onDispose { ed.releaseUiResources() } }
             LaunchedEffect(ed.fullscreen) { applyFullscreen(ed.fullscreen) }
             var ready by remember { mutableStateOf(false) }
             LaunchedEffect(Unit) {
@@ -627,17 +636,20 @@ private fun EditorScreen(
     /** Read the file at [uriStr] into [target]. The extension picks the surface: the two document
      *  types share the explorer but not much else. Reads off-thread behind the "Opening note…"
      *  spinner so a big embedded PDF doesn't freeze the UI. */
-    suspend fun openInto(target: Editor, uriStr: String) {
+    suspend fun openInto(target: Editor, uriStr: String): Boolean {
         val name = displayNameOf(resolver, Uri.parse(uriStr))
         if (com.xnotes.core.util.DocumentKind.ofName(name ?: "") == com.xnotes.core.util.DocumentKind.CANVAS) {
-            target.openCanvasAsync(uriStr, name)
+            return target.openCanvasAsync(uriStr, name)
         } else {
             target.openAsync(uriStr, name)
+            return target.noteOpen && target.currentUri == uriStr
         }
     }
 
     fun openTreeFile(uriStr: String) {
-        scope.launch { openInto(editor, uriStr) }
+        scope.launch {
+            openInto(editor, uriStr)
+        }
     }
 
     /** Open two picked files together, one per pane, and start the split focused on the first. */
@@ -884,14 +896,21 @@ private fun EditorScreen(
     // the snackbar; Home stays put and the keyboard slides over it. A floating keyboard reports no
     // inset. Insets are consumed below so inner imePadding only adds what the bars don't cover.
     val contentInsets = if (fullscreen) WindowInsets(0, 0, 0, 0) else WindowInsets.systemBars
+    // Each pane retains its exit clock; Home returns only after the last open pane closes.
+    val documentNavigationTransition = updateTransition(editor.noteOpen, label = "document navigation")
+    val homeNavigationTransition = updateTransition(
+        editor.noteOpen || editor.secondary?.noteOpen == true,
+        label = "home navigation",
+    )
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar, Modifier.windowInsetsPadding(WindowInsets.ime.exclude(contentInsets))) },
         contentWindowInsets = contentInsets,
     ) { inner ->
         Box(modifier = Modifier.fillMaxSize().padding(inner).consumeWindowInsets(contentInsets)) {
-            // BASE LAYER: backstage is the root of the stack — always present underneath.
+            // Home stays mounted underneath, preserving its folder and scroll state.
             com.xnotes.ui.Backstage(
                 editor = editor,
+                modifier = homeNavigationTransition.documentBackstageMotion(),
                 view = backstageView,
                 onSelectView = { backstageView = it },
                 onExitApp = { (context as? android.app.Activity)?.finish() },
@@ -1012,7 +1031,7 @@ private fun EditorScreen(
                     insertPdfLauncher.launch(arrayOf("application/pdf"))
                 },
             )
-            SplitHost(editor, actions)
+            SplitHost(editor, actions, documentNavigationTransition)
         }
     }
     if (showShareChooser) {
@@ -1223,18 +1242,51 @@ private val SwallowTouches = Modifier.pointerInput(Unit) {
  * when the split opens, closes or the device turns.
  */
 @Composable
-private fun SplitHost(editor: Editor, actions: PaneActions) {
+private fun SplitHost(
+    editor: Editor,
+    actions: PaneActions,
+    primaryTransition: Transition<Boolean>,
+) {
     val second = editor.secondary
-    val split = editor.noteOpen && second?.noteOpen == true
-    // A pane that closed on its own leaves the other one full-screen; once neither is open the
-    // second editor is released, freeing its canvas and GL surfaces.
-    LaunchedEffect(editor.noteOpen, second?.noteOpen) {
-        if (second != null && !second.noteOpen) editor.releaseClosedSecondary()
+    val secondaryVisibility = remember(second) { MutableTransitionState(false) }
+        .apply { targetState = second?.noteOpen == true }
+    // Surface-backed canvas panes outlive their model's open flag until the exit settles. Keep the
+    // rendering type latched for that interval so the surface is not swapped out mid-transition.
+    val primaryCanvasContent = remember(editor) { mutableStateOf(editor.canvasOpen) }
+    val secondaryCanvasContent = remember(second) { mutableStateOf(second?.canvasOpen == true) }
+    LaunchedEffect(editor.canvasOpen, editor.noteOpen, primaryTransition.currentState, primaryTransition.targetState) {
+        when {
+            editor.canvasOpen -> primaryCanvasContent.value = true
+            editor.noteOpen -> primaryCanvasContent.value = false
+            primaryTransition.currentState == primaryTransition.targetState -> primaryCanvasContent.value = false
+        }
     }
-    if (!editor.noteOpen && second?.noteOpen != true) return
+    LaunchedEffect(second, second?.canvasOpen, second?.noteOpen, secondaryVisibility.currentState, secondaryVisibility.targetState) {
+        when {
+            second?.canvasOpen == true -> secondaryCanvasContent.value = true
+            second?.noteOpen == true -> secondaryCanvasContent.value = false
+            secondaryVisibility.currentState == secondaryVisibility.targetState -> secondaryCanvasContent.value = false
+        }
+    }
+    // Keep a closing secondary composed through its exit so its AndroidView canvas can leave with
+    // the pane. Release its GL surface only after that transition has actually settled.
+    LaunchedEffect(second, second?.noteOpen, secondaryVisibility.isIdle) {
+        // Also observe the open state: releaseClosedSecondary records that the pane finished
+        // opening before it allows a later close to release it.
+        if (second != null && (second.noteOpen || secondaryVisibility.isIdle)) {
+            editor.releaseClosedSecondary()
+        }
+    }
+    val showPrimary = primaryTransition.currentState || primaryTransition.targetState
+    val showSecondary = secondaryVisibility.currentState || secondaryVisibility.targetState
+    if (!showPrimary && !showSecondary) return
+    val split = showPrimary && showSecondary
+    val primaryCanvas = editor.canvasOpen || primaryCanvasContent.value
+    val secondaryCanvas = second?.canvasOpen == true || secondaryCanvasContent.value
 
     val sideBySide = LocalConfiguration.current.orientation ==
         android.content.res.Configuration.ORIENTATION_LANDSCAPE
+    val navigationDistance = documentNavigationDistancePx()
     val ratio = editor.splitRatio.coerceIn(MIN_PANE_RATIO, 1f - MIN_PANE_RATIO)
     BoxWithConstraints(Modifier.fillMaxSize().then(SwallowTouches).imePadding()) {
         val fullW = maxWidth
@@ -1258,26 +1310,42 @@ private fun SplitHost(editor: Editor, actions: PaneActions) {
             y = if (sideBySide) 0.dp else along,
         )
 
-        if (editor.noteOpen) {
-            EditorPane(
-                editor = editor,
-                app = editor,
-                actions = actions,
-                closable = split,
+        if (showPrimary) {
+            primaryTransition.AnimatedVisibility(
+                visible = { it },
                 modifier = paneSize(firstExtent),
-            )
+                enter = documentEnter(navigationDistance),
+                exit = documentExit(navigationDistance),
+            ) {
+                EditorPane(
+                    editor = editor,
+                    app = editor,
+                    actions = actions,
+                    closable = split,
+                    canvasContent = primaryCanvas,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
         }
-        if (second?.noteOpen == true) {
-            EditorPane(
-                editor = second,
-                app = editor,
-                actions = actions,
-                closable = split,
+        if (second != null && showSecondary) {
+            AnimatedVisibility(
+                visibleState = secondaryVisibility,
                 modifier = paneOffset(if (split) firstExtent else 0.dp).then(paneSize(secondExtent)),
-            )
+                enter = documentEnter(navigationDistance),
+                exit = documentExit(navigationDistance),
+            ) {
+                EditorPane(
+                    editor = second,
+                    app = editor,
+                    actions = actions,
+                    closable = split,
+                    canvasContent = secondaryCanvas,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
         }
         // Composed last so it sits over both panes and catches the drag before either of them.
-        if (split) {
+        if (split && primaryTransition.targetState && secondaryVisibility.targetState) {
             SplitDivider(
                 sideBySide = sideBySide,
                 extentPx = with(LocalDensity.current) { full.toPx() },
@@ -1304,6 +1372,7 @@ private fun EditorPane(
     app: Editor,
     actions: PaneActions,
     closable: Boolean,
+    canvasContent: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val palette = LocalPalette.current
@@ -1345,7 +1414,7 @@ private fun EditorPane(
                         .background((if (focused) palette.accent else palette.border).toComposeColor()),
                 )
             }
-            if (editor.canvasOpen) {
+            if (canvasContent) {
                 val canvas = editor.infinite
                 val bar: @Composable () -> Unit = {
                     com.xnotes.ui.InfiniteToolbar(
@@ -1364,6 +1433,7 @@ private fun EditorPane(
                             modifier = Modifier.fillMaxSize(),
                             update = { canvas.view.publish() },
                         )
+                        DocumentFirstFrameCover(canvas.contentReady)
                         canvas.editingField?.let { field ->
                             com.xnotes.ui.TextEditorOverlay(canvas, field)
                         }
@@ -1409,8 +1479,12 @@ private fun EditorPane(
                             AndroidView(
                                 factory = { detached(editor.surfaces) },
                                 modifier = Modifier.fillMaxSize(),
-                                update = { editor.view.requestRender() }, // repaint on (re)attach so a push never flashes blank
+                                update = {
+                                    editor.view.alpha = 1f
+                                    editor.view.requestRender()
+                                }, // Keep rasterization active while the first-frame cover is in place.
                             )
+                            DocumentFirstFrameCover(editor.noteContentReady)
                             editor.editingField?.let { field ->
                                 com.xnotes.ui.TextEditorOverlay(editor, field)
                             }
@@ -1442,6 +1516,13 @@ private fun EditorPane(
         }
         com.xnotes.ui.ColorDropOverlay(if (editor.canvasOpen) editor.infinite else editor)
     }
+}
+
+/** Cover only an unrendered surface; a completed first frame is visible immediately. */
+@Composable
+private fun DocumentFirstFrameCover(ready: Boolean) {
+    if (ready) return
+    Box(Modifier.fillMaxSize().background(LocalPalette.current.bg.toComposeColor()))
 }
 
 /**
@@ -1810,8 +1891,8 @@ private fun BoxScope.ZoomLockHint(editor: Editor) {
     AnimatedVisibility(
         visible = visible,
         modifier = Modifier.align(Alignment.TopCenter).padding(com.xnotes.ui.LocalToolbarCover.current).padding(top = 8.dp),
-        enter = fadeIn(),
-        exit = fadeOut(),
+        enter = materialHintEnter(),
+        exit = materialHintExit(),
     ) {
         Row(
             modifier = Modifier

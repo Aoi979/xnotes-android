@@ -759,16 +759,30 @@ class CanvasState(
 
     /** Scroll so content rect [c] is on screen, [margin] viewport px clear of the edges and any toolbar; not at all if it is. */
     fun scrollIntoView(c: Rect, margin: Double) {
+        val target = scrollTargetIntoView(c, margin)
+        scrollX = target.x
+        scrollY = target.y
+        clampScroll()
+    }
+
+    /** The scroll offsets that would bring [c] into view, without changing the live canvas state. */
+    fun scrollTargetIntoView(c: Rect, margin: Double): Pt {
         val tl = contentToViewport(Pt(c.left, c.top))
         val br = contentToViewport(Pt(c.right, c.bottom))
         val left = insetLeft + margin
         val right = viewportW - insetRight - margin
         val top = insetTop + margin
         val bottom = viewportH - insetBottom - margin
-        if (right <= left || bottom <= top) return
+        if (right <= left || bottom <= top) return Pt(scrollX, scrollY)
         val dx = if (tl.x < left || br.x > right) (tl.x + br.x) / 2 - (left + right) / 2 else 0.0
         val dy = if (tl.y < top || br.y > bottom) (tl.y + br.y) / 2 - (top + bottom) / 2 else 0.0
-        if (dx != 0.0 || dy != 0.0) scrollBy(dx, dy)
+        val x = scrollX + dx
+        val y = scrollY + dy
+        return if (!verticalScroll && pageRects.isNotEmpty()) {
+            rowClampedScroll(currentRow, x, y)
+        } else {
+            Pt(x.coerceIn(minScrollX(), maxScrollX()), y.coerceIn(minScrollY(), maxScrollY()))
+        }
     }
 
     // --- pages & navigation ---
@@ -1155,6 +1169,36 @@ class CanvasState(
         // still blitted (scaled) so a pinch never flashes, but a stale *footprint* is not: stretching
         // a whole page while a margin slider is dragged reads far worse than bare paper does.
         return caches[page]?.takeIf { it.cover == footprint(page) }
+    }
+
+    /**
+     * Build a modest-resolution first-frame cache before the full-resolution one. The note editor
+     * can reveal this usable preview as soon as it lands, then the regular draw path upgrades it
+     * in the background. This avoids holding the page behind the first-frame cover for the full
+     * cost of rasterizing dense ink or a PDF at tablet resolution.
+     */
+    fun scheduleInitialFrameCaches(page: Page) {
+        val targetRes = clampedRes(page)
+        val previewRes = min(targetRes, INITIAL_FRAME_CACHE_RES)
+        if (previewRes >= targetRes - 1e-6) return
+
+        val ink = caches[page]
+        if (ink?.usableFor(page, targetRes) != true &&
+            ink?.usableFor(page, previewRes) != true &&
+            page !in pendingInk
+        ) {
+            scheduleInk(page, previewRes)
+        }
+
+        if (hasPageBackground(page)) {
+            val background = bgCaches[page]
+            if (background?.usableFor(page, targetRes) != true &&
+                background?.usableFor(page, previewRes) != true &&
+                page !in pendingBg
+            ) {
+                scheduleBg(page, previewRes)
+            }
+        }
     }
 
     private fun scheduleInk(page: Page, res: Double) {
@@ -2058,6 +2102,9 @@ class CanvasState(
 
         /** Padding (content px) around a replayed or repaired dirty rect, for AA edges. */
         const val SHARP_EDIT_PAD = 2.0
+
+        /** Initial page preview resolution (logical pixels per page unit), before full detail lands. */
+        const val INITIAL_FRAME_CACHE_RES = 0.75
 
         /** Gap (viewport px) left above the page top so nothing hides behind the toolbar. */
         const val TOP_GAP = 16.0

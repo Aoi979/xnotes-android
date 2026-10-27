@@ -7,6 +7,14 @@ import org.junit.Test
 
 class ToolbarLayoutTest {
 
+    @Test fun cuteMigratesAfterMathAndStaysCanvasOnly() {
+        val old = ToolbarLayout.CANVAS_DEFAULT.sections.map { s -> s.entries.filter { it.item != ToolbarItem.CUTE }.map { it.item.id to it.visible } }
+        val migrated = ToolbarLayout.fromRaw(old, ToolbarLayout.CANVAS_ITEMS, ToolbarLayout.CANVAS_DEFAULT)
+        val items = migrated.sections.flatMap { it.entries }.map { it.item }
+        assertEquals(items.indexOf(ToolbarItem.MATH) + 1, items.indexOf(ToolbarItem.CUTE))
+        assertFalse(ToolbarItem.CUTE in ToolbarLayout.NOTE_ITEMS)
+    }
+
     private fun sec(vararg items: ToolbarItem) = ToolbarSection(items.map { ToolbarEntry(it) })
     private fun ToolbarLayout.toRaw(): List<List<Pair<String, Boolean>>> =
         sections.map { s -> s.entries.map { it.item.id to it.visible } }
@@ -196,10 +204,21 @@ class ToolbarLayoutTest {
     }
 
     @Test fun theTwoBarsDoNotShareTheirOwnItems() {
+        assertTrue(ToolbarItem.MATH !in ToolbarLayout.NOTE_ITEMS)
         assertTrue(ToolbarItem.WAYPOINTS !in ToolbarLayout.NOTE_ITEMS)
         assertTrue(ToolbarItem.MINIMAP !in ToolbarLayout.NOTE_ITEMS)
         assertTrue(ToolbarItem.PAGE_NAV !in ToolbarLayout.CANVAS_ITEMS)
         assertTrue(ToolbarItem.TEXT !in ToolbarLayout.CANVAS_ITEMS)
+    }
+
+    @Test fun existingCanvasPlacesMathBesideShapesAndKeepsHiddenChoices() {
+        val raw = ToolbarLayout.CANVAS_DEFAULT.toRaw().map { section -> section.filterNot { it.first == ToolbarItem.MATH.id }.map { if (it.first == ToolbarItem.SHAPE.id) it.first to false else it } }
+        val restored = ToolbarLayout.fromRaw(raw, ToolbarLayout.CANVAS_ITEMS, ToolbarLayout.CANVAS_DEFAULT)
+        val section = restored.sections.first { it.entries.any { it.item == ToolbarItem.SHAPE } }.entries
+        val shape = section.indexOfFirst { it.item == ToolbarItem.SHAPE }
+        assertFalse(section[shape].visible)
+        assertEquals(ToolbarItem.MATH, section[shape + 1].item)
+        assertTrue(section[shape + 1].visible)
     }
 
     @Test fun theCanvasDefaultRoundTripsThroughRaw() {

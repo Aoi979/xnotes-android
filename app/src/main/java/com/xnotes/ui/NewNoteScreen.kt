@@ -1,13 +1,18 @@
 package com.xnotes.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -29,6 +34,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridScope
@@ -45,21 +51,31 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ButtonGroup
+import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.ToggleButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -100,6 +116,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
@@ -196,7 +213,7 @@ internal class CoverEdit(val pageMm: Pair<Double, Double>, val current: PageStyl
  * parts and move the settings into a bottom sheet. Nothing is written until Create. Given a
  * [coverEdit], it is that note's cover picker instead: the cover alone, and Done.
  */
-@OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 internal fun NewNoteScreen(
     editor: Editor,
@@ -206,11 +223,25 @@ internal fun NewNoteScreen(
     busy: Boolean,
     onImportTemplate: () -> Unit,
     onTemplateFromImage: (TemplateKind) -> Unit,
-    onCreate: (String, Editor.NewNoteSetup) -> Unit,
+    onCreate: (String, Editor.NewNoteSetup, () -> Unit) -> Unit,
     onClose: () -> Unit,
     coverEdit: CoverEdit? = null,
 ) {
-    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+    val visibility = remember { MutableTransitionState(false).apply { targetState = true } }
+    var afterExit by remember { mutableStateOf<(() -> Unit)?>(null) }
+    fun dismissAfterExit(action: () -> Unit) {
+        if (busy) return
+        afterExit = action
+        visibility.targetState = false
+    }
+    LaunchedEffect(visibility.isIdle, visibility.currentState, afterExit) {
+        if (visibility.isIdle && !visibility.currentState) {
+            val action = afterExit
+            afterExit = null
+            action?.invoke()
+        }
+    }
+    Dialog(onDismissRequest = { dismissAfterExit(onClose) }, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         MatchActivityWindow()
         val palette = LocalPalette.current
         val text = palette.text.toComposeColor()
@@ -291,11 +322,13 @@ internal fun NewNoteScreen(
 
         fun create() {
             if (coverEdit != null) {
-                if (hasCover) coverEdit.onDone(coverStyle)
+                if (hasCover) dismissAfterExit { coverEdit.onDone(coverStyle) }
                 return
             }
             if (!canCreate) return
-            onCreate(name.text, Editor.NewNoteSetup(pageMm.first, pageMm.second, style, coverStyle.takeIf { hasCover }))
+            onCreate(name.text, Editor.NewNoteSetup(pageMm.first, pageMm.second, style, coverStyle.takeIf { hasCover })) {
+                dismissAfterExit(onClose)
+            }
         }
 
         fun setOrientation(o: Orientation) {
@@ -336,7 +369,7 @@ internal fun NewNoteScreen(
                     // A picture drawn just now fades in; one drawn before shows at once.
                     val shown by animateFloatAsState(if (bmp != null) 1f else 0f, tween(180), label = "thumb")
                     // Cropping, not fitting: a pixel of rounding between the bitmap and its box never shows as a band.
-                    if (bmp != null) Image(bmp, contentDescription = t.name, Modifier.size(w, h), contentScale = ContentScale.Crop, alpha = shown)
+                    if (bmp != null) Image(bmp, contentDescription = t.name, Modifier.size(w, h).graphicsLayer { alpha = shown }, contentScale = ContentScale.Crop)
                 }
             }
         }
@@ -376,50 +409,31 @@ internal fun NewNoteScreen(
         @Composable
         fun MmField(value: String, label: String, onChange: (String) -> Unit) {
             val ok = value.toDoubleOrNull()?.let { it in range } == true
-            var focused by remember { mutableStateOf(false) }
             DisposableEffect(label) { onDispose { fieldBounds.remove(label) } }
-            BasicTextField(
+            OutlinedTextField(
                 value = value,
                 onValueChange = onChange,
                 singleLine = true,
                 textStyle = TextStyle(color = text, fontSize = 14.sp, textAlign = TextAlign.Center),
-                cursorBrush = SolidColor(accent),
+                label = { Text(label, fontSize = 12.sp, maxLines = 1, softWrap = false) },
+                isError = !ok,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                modifier = Modifier
-                    .width(64.dp)
-                    .height(40.dp)
-                    .semantics { contentDescription = label }
-                    .onGloballyPositioned { fieldBounds[label] = it.boundsInRoot() }
-                    .onFocusChanged { focused = it.isFocused }
-                    .border(
-                        if (focused) 2.dp else 1.dp,
-                        when {
-                            !ok -> palette.danger.toComposeColor()
-                            focused -> accent
-                            else -> border
-                        },
-                        MaterialTheme.shapes.small,
-                    )
-                    .background(palette.menuBg.toComposeColor(), MaterialTheme.shapes.small)
-                    .padding(vertical = 10.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = text,
+                    unfocusedTextColor = text,
+                    focusedContainerColor = palette.menuBg.toComposeColor(),
+                    unfocusedContainerColor = palette.menuBg.toComposeColor(),
+                    focusedBorderColor = accent,
+                    unfocusedBorderColor = border,
+                    errorBorderColor = palette.danger.toComposeColor(),
+                    focusedLabelColor = accent,
+                    unfocusedLabelColor = dim,
+                    errorLabelColor = palette.danger.toComposeColor(),
+                    cursorColor = accent,
+                ),
+                modifier = Modifier.width(136.dp).onGloballyPositioned { fieldBounds[label] = it.boundsInRoot() },
             )
-        }
-
-        @Composable
-        fun OrientationButton(o: Orientation, desc: String) {
-            val on = (o == Orientation.PORTRAIT) == portrait
-            Box(
-                Modifier
-                    .size(44.dp, 38.dp)
-                    .background(if (on) palette.selectionBackground.toComposeColor() else Color.Transparent)
-                    .semantics { contentDescription = desc; selected = on }
-                    .clickable { setOrientation(o) },
-                contentAlignment = Alignment.Center,
-            ) {
-                val fg = if (on) palette.selectionForeground.toComposeColor() else dim
-                Box(Modifier.size(if (o == Orientation.PORTRAIT) 11.dp else 17.dp, if (o == Orientation.PORTRAIT) 17.dp else 11.dp).border(2.dp, fg, RoundedCornerShape(2.dp)))
-            }
         }
 
         @Composable
@@ -479,13 +493,60 @@ internal fun NewNoteScreen(
                         MmField(customW, stringResource(R.string.width_mm)) { customW = it }
                         Text("×", color = dim, fontSize = 13.sp)
                         MmField(customH, stringResource(R.string.height_mm)) { customH = it }
-                        Text("mm", color = dim, fontSize = 13.sp)
                     }
                 }
-                Row(Modifier.clip(MaterialTheme.shapes.small).border(1.dp, border, MaterialTheme.shapes.small)) {
-                    OrientationButton(Orientation.PORTRAIT, stringResource(R.string.orientation_portrait))
-                    Box(Modifier.width(1.dp).height(38.dp).background(border))
-                    OrientationButton(Orientation.LANDSCAPE, stringResource(R.string.orientation_landscape))
+                val portraitLabel = stringResource(R.string.orientation_portrait)
+                val landscapeLabel = stringResource(R.string.orientation_landscape)
+                val portraitInteraction = remember { MutableInteractionSource() }
+                val landscapeInteraction = remember { MutableInteractionSource() }
+                ButtonGroup(
+                    overflowIndicator = { menuState -> ButtonGroupDefaults.OverflowIndicator(menuState) },
+                    modifier = Modifier.selectableGroup(),
+                ) {
+                    customItem(
+                        buttonGroupContent = {
+                            ToggleButton(
+                                checked = portrait,
+                                onCheckedChange = { if (it) setOrientation(Orientation.PORTRAIT) },
+                                interactionSource = portraitInteraction,
+                                modifier = Modifier.animateWidth(portraitInteraction),
+                            ) {
+                                OrientationGlyph(false, portraitLabel, LocalContentColor.current)
+                            }
+                        },
+                        menuContent = { menuState ->
+                            DropdownMenuItem(
+                                text = { Text(portraitLabel) },
+                                leadingIcon = { OrientationGlyph(false, portraitLabel, LocalContentColor.current) },
+                                onClick = {
+                                    setOrientation(Orientation.PORTRAIT)
+                                    menuState.dismiss()
+                                },
+                            )
+                        },
+                    )
+                    customItem(
+                        buttonGroupContent = {
+                            ToggleButton(
+                                checked = !portrait,
+                                onCheckedChange = { if (it) setOrientation(Orientation.LANDSCAPE) },
+                                interactionSource = landscapeInteraction,
+                                modifier = Modifier.animateWidth(landscapeInteraction),
+                            ) {
+                                OrientationGlyph(true, landscapeLabel, LocalContentColor.current)
+                            }
+                        },
+                        menuContent = { menuState ->
+                            DropdownMenuItem(
+                                text = { Text(landscapeLabel) },
+                                leadingIcon = { OrientationGlyph(true, landscapeLabel, LocalContentColor.current) },
+                                onClick = {
+                                    setOrientation(Orientation.LANDSCAPE)
+                                    menuState.dismiss()
+                                },
+                            )
+                        },
+                    )
                 }
             }
             // Create waits for a size that fits; this says why.
@@ -553,7 +614,7 @@ internal fun NewNoteScreen(
             StyleCaption(caption)
             Spacer(Modifier.size(6.dp))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                ModeChip(stringResource(R.string.default_choice), value == null, onDefault)
+                ModeChoiceButton(stringResource(R.string.default_choice), value == null, onClick = onDefault)
                 SwatchCircles(editor, role, value, onPick)
             }
         }
@@ -631,31 +692,45 @@ internal fun NewNoteScreen(
         }
 
         @Composable
-        fun Tab(label: String, on: Boolean, onClick: () -> Unit) {
-            // The underline is drawn, not laid out: a full-width child would widen this tab over the others.
-            Box(
-                Modifier
-                    .fillMaxHeight()
-                    .semantics { selected = on }
-                    .drawBehind {
-                        if (on) {
-                            val h = 3.dp.toPx()
-                            drawRoundRect(accent, topLeft = Offset(0f, this.size.height - h), size = Size(this.size.width, h), cornerRadius = CornerRadius(h))
-                        }
-                    }
-                    .clickable(onClick = onClick)
-                    .padding(horizontal = 16.dp),
-                contentAlignment = Alignment.Center,
-            ) { Text(label, color = if (on) accent else dim, fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 1) }
-        }
-
-        @Composable
         fun Tabs() {
-            Row(Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 12.dp)) {
+            val selectedIndex = when {
+                aiOpen -> if (coverOnly) 1 else 2
+                coverOnly || face == Face.COVER -> if (coverOnly) 0 else 1
+                else -> 0
+            }
+            PrimaryTabRow(
+                selectedTabIndex = selectedIndex,
+                modifier = Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 12.dp),
+                containerColor = palette.panel.toComposeColor(),
+                divider = {},
+            ) {
+                val pagesLabel = stringResource(R.string.pages)
+                val coverLabel = stringResource(R.string.cover)
+                val aiLabel = stringResource(R.string.tab_generate_ai)
                 // The cover picker of an open note styles its cover alone, so it has no Pages tab.
-                if (!coverOnly) Tab(stringResource(R.string.pages), !aiOpen && face == Face.PAGES) { face = Face.PAGES; aiOpen = false }
-                Tab(stringResource(R.string.cover), !aiOpen && face == Face.COVER) { face = Face.COVER; aiOpen = false }
-                Tab(stringResource(R.string.tab_generate_ai), aiOpen) { aiOpen = true }
+                if (!coverOnly) {
+                    Tab(
+                        selected = !aiOpen && face == Face.PAGES,
+                        onClick = { face = Face.PAGES; aiOpen = false },
+                        text = { Text(pagesLabel, maxLines = 1) },
+                        selectedContentColor = accent,
+                        unselectedContentColor = dim,
+                    )
+                }
+                Tab(
+                    selected = !aiOpen && face == Face.COVER,
+                    onClick = { face = Face.COVER; aiOpen = false },
+                    text = { Text(coverLabel, maxLines = 1) },
+                    selectedContentColor = accent,
+                    unselectedContentColor = dim,
+                )
+                Tab(
+                    selected = aiOpen,
+                    onClick = { aiOpen = true },
+                    text = { Text(aiLabel, maxLines = 1) },
+                    selectedContentColor = accent,
+                    unselectedContentColor = dim,
+                )
             }
         }
 
@@ -721,9 +796,9 @@ internal fun NewNoteScreen(
         val sImportedHelp = stringResource(R.string.templates_imported_help)
         val sDesigns = stringResource(R.string.cover_designs)
 
-        fun LazyGridScope.heading(title: String, count: Int?, help: String? = null) {
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                Column(Modifier.padding(top = 18.dp, bottom = 2.dp)) {
+        fun LazyGridScope.heading(title: String, count: Int?, key: String, help: String? = null) {
+            item(key = "heading:$key", span = { GridItemSpan(maxLineSpan) }) {
+                Column(Modifier.animateItem(fadeInSpec = materialItemFadeSpec, placementSpec = materialItemPlacementSpec, fadeOutSpec = materialItemFadeSpec).padding(top = 18.dp, bottom = 2.dp)) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(title, color = dim, fontSize = 13.sp, fontWeight = FontWeight.Medium)
                         if (count != null) Text(count.toString(), color = dim.copy(alpha = 0.75f), fontSize = 13.sp)
@@ -733,14 +808,14 @@ internal fun NewNoteScreen(
             }
         }
 
-        fun LazyGridScope.gallery() {
-            if (face == Face.PAGES) {
+        fun LazyGridScope.gallery(destination: Face) {
+            if (destination == Face.PAGES) {
                 val tags = pages.flatMap { it.template.tags }.groupingBy { it }.eachCount().filter { it.value >= 2 }
                     .entries.sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { it.key }).map { it.key }
-                item(span = { GridItemSpan(maxLineSpan) }) {
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        ModeChip(stringResource(R.string.tag_all), tag == null) { tag = null }
-                        for (t in tags) ModeChip(t.replaceFirstChar { it.uppercase() }, tag == t) { tag = t }
+                item(key = "page-tags", span = { GridItemSpan(maxLineSpan) }) {
+                    FlowRow(Modifier.animateItem(fadeInSpec = materialItemFadeSpec, placementSpec = materialItemPlacementSpec, fadeOutSpec = materialItemFadeSpec), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TemplateFilterChip(stringResource(R.string.tag_all), tag == null) { tag = null }
+                        for (t in tags) TemplateFilterChip(t.replaceFirstChar { it.uppercase() }, tag == t) { tag = t }
                     }
                 }
                 fun shown(e: TemplateLibrary.Entry) = tag == null || tag in e.template.tags
@@ -748,59 +823,60 @@ internal fun NewNoteScreen(
                 val examples = pages.filter { it.source == TemplateLibrary.Source.BUNDLED && shown(it) }
                 val imported = pages.filter { it.source == TemplateLibrary.Source.IMPORTED && shown(it) }
                 if (tag == null || builtIn.isNotEmpty()) {
-                    heading(sBuiltIn, builtIn.size)
-                    if (tag == null) item {
-                        Tile(stringResource(R.string.none), pageKey == PageTemplates.NONE, { pickPage(PageTemplates.NONE) }, null) { w, h -> Thumb(null, PageTemplates.NONE, TemplateValues.DEFAULTS, w, h, keep = true) }
+                    heading(sBuiltIn, builtIn.size, "built-in")
+                    if (tag == null) item(key = "none:pages") {
+                        Box(Modifier.animateItem(fadeInSpec = materialItemFadeSpec, placementSpec = materialItemPlacementSpec, fadeOutSpec = materialItemFadeSpec)) { Tile(stringResource(R.string.none), pageKey == PageTemplates.NONE, { pickPage(PageTemplates.NONE) }, null) { w, h -> Thumb(null, PageTemplates.NONE, TemplateValues.DEFAULTS, w, h, keep = true) } }
                     }
                     items(builtIn, key = { it.key }) { e ->
-                        Tile(e.template.name, pageKey == e.key, { pickPage(e.key) }, null) { w, h -> Thumb(e.template, e.key, TemplateValues.DEFAULTS, w, h, keep = true) }
+                        Box(Modifier.animateItem(fadeInSpec = materialItemFadeSpec, placementSpec = materialItemPlacementSpec, fadeOutSpec = materialItemFadeSpec)) { Tile(e.template.name, pageKey == e.key, { pickPage(e.key) }, null) { w, h -> Thumb(e.template, e.key, TemplateValues.DEFAULTS, w, h, keep = true) } }
                     }
                 }
                 if (examples.isNotEmpty()) {
-                    heading(sExamples, examples.size)
+                    heading(sExamples, examples.size, "examples")
                     items(examples, key = { it.key }) { e ->
-                        Tile(e.template.name, pageKey == e.key, { pickPage(e.key) }, null) { w, h -> Thumb(e.template, e.key, TemplateValues.DEFAULTS, w, h, keep = true) }
+                        Box(Modifier.animateItem(fadeInSpec = materialItemFadeSpec, placementSpec = materialItemPlacementSpec, fadeOutSpec = materialItemFadeSpec)) { Tile(e.template.name, pageKey == e.key, { pickPage(e.key) }, null) { w, h -> Thumb(e.template, e.key, TemplateValues.DEFAULTS, w, h, keep = true) } }
                     }
                 }
-                heading(sImported, null, sImportedHelp)
+                heading(sImported, null, "imported", sImportedHelp)
                 items(imported, key = { it.key }) { e ->
-                    Tile(e.template.name, pageKey == e.key, { pickPage(e.key) }, {
+                    Box(Modifier.animateItem(fadeInSpec = materialItemFadeSpec, placementSpec = materialItemPlacementSpec, fadeOutSpec = materialItemFadeSpec)) { Tile(e.template.name, pageKey == e.key, { pickPage(e.key) }, {
                         editor.removeTemplate(e.key)
                         if (pageKey == e.key) pickPage(PageTemplates.NONE)
                     }) { w, h ->
                         Thumb(e.template, e.key, TemplateValues.DEFAULTS, w, h, keep = true)
-                    }
+                    } }
                 }
-                item { ActionTile(XnotesIcons.importDoc, stringResource(R.string.import_template_file), onImportTemplate) }
-                item { ActionTile(XnotesIcons.image, stringResource(R.string.page_from_image)) { onTemplateFromImage(TemplateKind.PAGE) } }
+                item(key = "import-template:page") { Box(Modifier.animateItem(fadeInSpec = materialItemFadeSpec, placementSpec = materialItemPlacementSpec, fadeOutSpec = materialItemFadeSpec)) { ActionTile(XnotesIcons.importDoc, stringResource(R.string.import_template_file), onImportTemplate) } }
+                item(key = "from-image:page") { Box(Modifier.animateItem(fadeInSpec = materialItemFadeSpec, placementSpec = materialItemPlacementSpec, fadeOutSpec = materialItemFadeSpec)) { ActionTile(XnotesIcons.image, stringResource(R.string.page_from_image)) { onTemplateFromImage(TemplateKind.PAGE) } } }
             } else {
                 val bundled = covers.filter { it.source != TemplateLibrary.Source.IMPORTED }
                 val imported = covers.filter { it.source == TemplateLibrary.Source.IMPORTED }
-                heading(sDesigns, bundled.size)
+                heading(sDesigns, bundled.size, "designs")
                 // None is the note without a cover, drawn as the empty frame the stage shows; picking a design turns one
                 // on. A cover being changed has no None here: the pages panel's Remove cover does that.
-                if (!coverOnly) item {
-                    Tile(stringResource(R.string.none), !hasCover, {
+                if (!coverOnly) item(key = "none:cover") {
+                    Box(Modifier.animateItem(fadeInSpec = materialItemFadeSpec, placementSpec = materialItemPlacementSpec, fadeOutSpec = materialItemFadeSpec)) { Tile(stringResource(R.string.none), !hasCover, {
                         coverOn = false
                         face = Face.COVER
                     }, null, framed = false) { w, h -> Dashed(w, h) {} }
-                }
-                items(bundled, key = { it.key }) { e ->
-                    Tile(e.template.name, hasCover && coverKey == e.key, { pickCover(e.key) }, null) { w, h ->
-                        Thumb(e.template, e.key, TemplateValues.DEFAULTS, w, h, keep = true)
                     }
                 }
-                heading(sImported, null, sImportedHelp)
+                items(bundled, key = { it.key }) { e ->
+                    Box(Modifier.animateItem(fadeInSpec = materialItemFadeSpec, placementSpec = materialItemPlacementSpec, fadeOutSpec = materialItemFadeSpec)) { Tile(e.template.name, hasCover && coverKey == e.key, { pickCover(e.key) }, null) { w, h ->
+                        Thumb(e.template, e.key, TemplateValues.DEFAULTS, w, h, keep = true)
+                    } }
+                }
+                heading(sImported, null, "imported", sImportedHelp)
                 items(imported, key = { it.key }) { e ->
-                    Tile(e.template.name, hasCover && coverKey == e.key, { pickCover(e.key) }, {
+                    Box(Modifier.animateItem(fadeInSpec = materialItemFadeSpec, placementSpec = materialItemPlacementSpec, fadeOutSpec = materialItemFadeSpec)) { Tile(e.template.name, hasCover && coverKey == e.key, { pickCover(e.key) }, {
                         editor.removeTemplate(e.key)
                         if (coverKey == e.key) coverOn = false
                     }) { w, h ->
                         Thumb(e.template, e.key, TemplateValues.DEFAULTS, w, h, keep = true)
-                    }
+                    } }
                 }
-                item { ActionTile(XnotesIcons.importDoc, stringResource(R.string.import_template_file), onImportTemplate) }
-                item { ActionTile(XnotesIcons.image, stringResource(R.string.cover_from_image)) { onTemplateFromImage(TemplateKind.COVER) } }
+                item(key = "import-template:cover") { Box(Modifier.animateItem(fadeInSpec = materialItemFadeSpec, placementSpec = materialItemPlacementSpec, fadeOutSpec = materialItemFadeSpec)) { ActionTile(XnotesIcons.importDoc, stringResource(R.string.import_template_file), onImportTemplate) } }
+                item(key = "from-image:cover") { Box(Modifier.animateItem(fadeInSpec = materialItemFadeSpec, placementSpec = materialItemPlacementSpec, fadeOutSpec = materialItemFadeSpec)) { ActionTile(XnotesIcons.image, stringResource(R.string.cover_from_image)) { onTemplateFromImage(TemplateKind.COVER) } } }
             }
         }
 
@@ -852,211 +928,282 @@ internal fun NewNoteScreen(
                 focusManager.clearFocus()
             }
         }
-        Surface(
-            // Read before the insets' padding, a press shares the fields' root coordinates.
-            Modifier.fillMaxSize().pointerInput(Unit) {
-                awaitEachGesture {
-                    val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-                    if (fieldBounds.values.none { it.contains(down.position) }) focusManager.clearFocus()
-                }
-            }.windowInsetsPadding(WindowInsets.systemBars),
-            color = palette.panel.toComposeColor(),
+        AnimatedVisibility(
+            visibleState = visibility,
+            modifier = Modifier.fillMaxSize(),
+            enter = materialModalEnter(),
+            exit = materialModalExit(),
+            label = "new note surface",
         ) {
-            BoxWithConstraints(Modifier.fillMaxSize()) {
-                val screenW = maxWidth
-                val wide = screenW >= 720.dp
-                Column(Modifier.fillMaxSize()) {
-                    Row(
-                        Modifier.fillMaxWidth().height(76.dp).padding(start = 8.dp, end = 20.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        IconButton(onClick = onClose) { Icon(XnotesIcons.close, stringResource(R.string.close_new_note), tint = text) }
-                        if (coverOnly) {
-                            Text(stringResource(if (coverEdit?.current == null) R.string.add_cover else R.string.change_cover_title), color = text, fontSize = 22.sp, modifier = Modifier.weight(1f))
-                        } else Column(Modifier.weight(1f)) {
-                            Text(stringResource(R.string.new_note_in, folderName), color = dim, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            val nameStyle = TextStyle(color = text, fontSize = 22.sp)
-                            BasicTextField(
-                                value = name,
-                                onValueChange = { v ->
-                                    val caretOnly = v.text == name.text
-                                    name = if (caretOnly && android.os.SystemClock.uptimeMillis() < keepAllUntil) {
-                                        v.copy(selection = TextRange(0, v.text.length))
-                                    } else v
-                                },
-                                singleLine = true,
-                                textStyle = nameStyle,
-                                cursorBrush = SolidColor(accent),
-                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                                // Done only ends the typing, so the name can come first and the rest after.
-                                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                                decorationBox = { field ->
-                                    // A cleared name shows, dimmed, the one the note gets anyway.
-                                    Box {
-                                        if (name.text.isEmpty()) Text(initialName, style = nameStyle.copy(color = dim.copy(alpha = 0.5f)), maxLines = 1)
-                                        field()
-                                    }
-                                },
-                                modifier = Modifier.widthIn(max = 480.dp).fillMaxWidth()
-                                    .onGloballyPositioned { fieldBounds["name"] = it.boundsInRoot() }
-                                    .padding(vertical = 4.dp)
-                                    .onFocusChanged {
-                                    nameFocused = it.isFocused
-                                    if (it.isFocused && !selectedOnce) {
-                                        selectedOnce = true
-                                        keepAllUntil = android.os.SystemClock.uptimeMillis() + 500
-                                        name = name.copy(selection = TextRange(0, name.text.length))
-                                    }
-                                },
-                            )
-                            // The line under the name stays quiet until the name is being edited.
-                            Box(Modifier.widthIn(max = 480.dp).fillMaxWidth().height(2.dp), contentAlignment = Alignment.BottomStart) {
-                                Box(Modifier.fillMaxWidth().height(if (nameFocused) 2.dp else 1.dp).background(if (nameFocused) accent else dim.copy(alpha = 0.4f)))
-                            }
-                            if (error != null) Text(error, color = palette.danger.toComposeColor(), fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
-                        }
-                        Button(
-                            onClick = { create() },
-                            // While the note is written the button stays gold and spins; create() ignores another tap.
-                            enabled = if (coverOnly) hasCover else sizeOk,
-                            colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = palette.onAccent.toComposeColor()),
+            Surface(
+                // Read before the insets' padding, a press shares the fields' root coordinates.
+                Modifier.fillMaxSize().pointerInput(Unit) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                        if (fieldBounds.values.none { it.contains(down.position) }) focusManager.clearFocus()
+                    }
+                }.windowInsetsPadding(WindowInsets.systemBars),
+                color = palette.panel.toComposeColor(),
+            ) {
+                BoxWithConstraints(Modifier.fillMaxSize()) {
+                    val screenW = maxWidth
+                    val wide = screenW >= 720.dp
+                    Column(Modifier.fillMaxSize()) {
+                        Row(
+                            Modifier.fillMaxWidth().height(76.dp).padding(start = 8.dp, end = 20.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            if (busy) {
-                                CircularProgressIndicator(Modifier.size(18.dp), color = palette.onAccent.toComposeColor(), strokeWidth = 2.dp)
-                            } else {
-                                Icon(XnotesIcons.check, null, modifier = Modifier.size(18.dp))
-                            }
-                            Spacer(Modifier.size(8.dp))
-                            Text(stringResource(if (coverOnly) R.string.done else R.string.create), fontWeight = FontWeight.Medium)
-                        }
-                    }
-                    HorizontalDivider(color = border)
-                    if (wide) {
-                        val stageW = (screenW * 0.38f).coerceIn(340.dp, 520.dp)
-                        Row(Modifier.weight(1f).fillMaxWidth()) {
-                            Column(
-                                Modifier.width(stageW).fillMaxHeight().background(palette.bg.toComposeColor()).padding(horizontal = 24.dp, vertical = 20.dp),
-                                verticalArrangement = Arrangement.spacedBy(16.dp),
-                            ) {
-                                Sheets(260.dp, 300.dp)
-                                if (!coverOnly) FormatRow()
-                                HorizontalDivider(color = border)
-                                // The settings fade at an edge with more beyond it, so a cut-off row reads as scrollable.
-                                val tuneScroll = rememberScrollState()
-                                val stage = palette.bg.toComposeColor()
-                                Column(
-                                    Modifier
-                                        .weight(1f)
-                                        .drawWithContent {
-                                            drawContent()
-                                            val fade = 28.dp.toPx()
-                                            val box = this.size
-                                            if (tuneScroll.canScrollForward) {
-                                                drawRect(
-                                                    Brush.verticalGradient(listOf(Color.Transparent, stage), startY = box.height - fade, endY = box.height),
-                                                    topLeft = Offset(0f, box.height - fade), size = Size(box.width, fade),
-                                                )
-                                            }
-                                            if (tuneScroll.canScrollBackward) {
-                                                drawRect(Brush.verticalGradient(listOf(stage, Color.Transparent), endY = fade / 2), size = Size(box.width, fade / 2))
-                                            }
+                            IconButton(onClick = { dismissAfterExit(onClose) }, enabled = !busy) { Icon(XnotesIcons.close, stringResource(R.string.close_new_note), tint = text) }
+                            if (coverOnly) {
+                                Text(stringResource(if (coverEdit?.current == null) R.string.add_cover else R.string.change_cover_title), color = text, fontSize = 22.sp, modifier = Modifier.weight(1f))
+                            } else Column(Modifier.weight(1f)) {
+                                Text(stringResource(R.string.new_note_in, folderName), color = dim, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                val nameStyle = TextStyle(color = text, fontSize = 22.sp)
+                                BasicTextField(
+                                    value = name,
+                                    onValueChange = { v ->
+                                        val caretOnly = v.text == name.text
+                                        name = if (caretOnly && android.os.SystemClock.uptimeMillis() < keepAllUntil) {
+                                            v.copy(selection = TextRange(0, v.text.length))
+                                        } else v
+                                    },
+                                    singleLine = true,
+                                    textStyle = nameStyle,
+                                    cursorBrush = SolidColor(accent),
+                                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                                    // Done only ends the typing, so the name can come first and the rest after.
+                                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                                    decorationBox = { field ->
+                                        // A cleared name shows, dimmed, the one the note gets anyway.
+                                        Box {
+                                            if (name.text.isEmpty()) Text(initialName, style = nameStyle.copy(color = dim.copy(alpha = 0.5f)), maxLines = 1)
+                                            field()
                                         }
-                                        .verticalScroll(tuneScroll),
-                                ) { Tune() }
+                                    },
+                                    modifier = Modifier.widthIn(max = 480.dp).fillMaxWidth()
+                                        .onGloballyPositioned { fieldBounds["name"] = it.boundsInRoot() }
+                                        .padding(vertical = 4.dp)
+                                        .onFocusChanged {
+                                        nameFocused = it.isFocused
+                                        if (it.isFocused && !selectedOnce) {
+                                            selectedOnce = true
+                                            keepAllUntil = android.os.SystemClock.uptimeMillis() + 500
+                                            name = name.copy(selection = TextRange(0, name.text.length))
+                                        }
+                                    },
+                                )
+                                // The line under the name stays quiet until the name is being edited.
+                                Box(Modifier.widthIn(max = 480.dp).fillMaxWidth().height(2.dp), contentAlignment = Alignment.BottomStart) {
+                                    Box(Modifier.fillMaxWidth().height(if (nameFocused) 2.dp else 1.dp).background(if (nameFocused) accent else dim.copy(alpha = 0.4f)))
+                                }
+                                if (error != null) Text(error, color = palette.danger.toComposeColor(), fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
                             }
-                            Column(Modifier.weight(1f).fillMaxHeight()) {
-                                Tabs()
-                                HorizontalDivider(color = border)
-                                if (aiOpen) {
-                                    AiTemplateTab(
-                                        coverOnly, wide = true, onImport = onImportTemplate,
-                                        modifier = Modifier.fillMaxSize().verticalScroll(aiScroll).padding(start = 24.dp, end = 24.dp, top = 20.dp, bottom = 40.dp),
-                                    )
+                            Button(
+                                onClick = { create() },
+                                // While the note is written the button stays gold and spins; create() ignores another tap.
+                                enabled = if (coverOnly) hasCover else sizeOk,
+                                colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = palette.onAccent.toComposeColor()),
+                            ) {
+                                if (busy) {
+                                    CircularProgressIndicator(Modifier.size(18.dp), color = palette.onAccent.toComposeColor(), strokeWidth = 2.dp)
                                 } else {
-                                    // Each tab keeps its own scroll, and the first time one shows, its picked tile comes into view.
-                                    val grid = if (face == Face.PAGES) pagesGrid else coverGrid
-                                    LaunchedEffect(face) {
-                                        if (!revealed.add(face)) return@LaunchedEffect
-                                        val index = pickedIndex(face) ?: return@LaunchedEffect
-                                        val info = snapshotFlow { grid.layoutInfo }.first { it.totalItemsCount > index }
-                                        val seen = info.visibleItemsInfo.firstOrNull { it.index == index }
-                                        if (seen == null || seen.offset.y + seen.size.height > info.viewportEndOffset) {
-                                            grid.scrollToItem(index)
-                                            grid.scrollBy(-info.viewportSize.height / 3f)
+                                    Icon(XnotesIcons.check, null, modifier = Modifier.size(18.dp))
+                                }
+                                Spacer(Modifier.size(8.dp))
+                                Text(stringResource(if (coverOnly) R.string.done else R.string.create), fontWeight = FontWeight.Medium)
+                            }
+                        }
+                        HorizontalDivider(color = border)
+                        if (wide) {
+                            val stageW = (screenW * 0.38f).coerceIn(340.dp, 520.dp)
+                            Row(Modifier.weight(1f).fillMaxWidth()) {
+                                Column(
+                                    Modifier.width(stageW).fillMaxHeight().background(palette.bg.toComposeColor()).padding(horizontal = 24.dp, vertical = 20.dp),
+                                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                                ) {
+                                    Sheets(260.dp, 300.dp)
+                                    if (!coverOnly) FormatRow()
+                                    HorizontalDivider(color = border)
+                                    // The settings fade at an edge with more beyond it, so a cut-off row reads as scrollable.
+                                    val tuneScroll = rememberScrollState()
+                                    val stage = palette.bg.toComposeColor()
+                                    Column(
+                                        Modifier
+                                            .weight(1f)
+                                            .drawWithContent {
+                                                drawContent()
+                                                val fade = 28.dp.toPx()
+                                                val box = this.size
+                                                if (tuneScroll.canScrollForward) {
+                                                    drawRect(
+                                                        Brush.verticalGradient(listOf(Color.Transparent, stage), startY = box.height - fade, endY = box.height),
+                                                        topLeft = Offset(0f, box.height - fade), size = Size(box.width, fade),
+                                                    )
+                                                }
+                                                if (tuneScroll.canScrollBackward) {
+                                                    drawRect(Brush.verticalGradient(listOf(stage, Color.Transparent), endY = fade / 2), size = Size(box.width, fade / 2))
+                                                }
+                                            }
+                                            .verticalScroll(tuneScroll),
+                                    ) { Tune() }
+                                }
+                                Column(Modifier.weight(1f).fillMaxHeight()) {
+                                    Tabs()
+                                    HorizontalDivider(color = border)
+                                    AnimatedContent(
+                                        targetState = aiOpen to face,
+                                        modifier = Modifier.fillMaxSize(),
+                                        transitionSpec = { materialFadeThrough(smallSurface = true) },
+                                        label = "new note template destination",
+                                    ) { (showAi, destination) ->
+                                        if (showAi) {
+                                            AiTemplateTab(
+                                                coverOnly, wide = true, onImport = onImportTemplate,
+                                                modifier = Modifier.fillMaxSize().verticalScroll(aiScroll).padding(start = 24.dp, end = 24.dp, top = 20.dp, bottom = 40.dp),
+                                            )
+                                        } else {
+                                            // Each tab keeps its own scroll, and the first time one shows, its picked tile comes into view.
+                                            val grid = if (destination == Face.PAGES) pagesGrid else coverGrid
+                                            LaunchedEffect(destination) {
+                                                if (!revealed.add(destination)) return@LaunchedEffect
+                                                val index = pickedIndex(destination) ?: return@LaunchedEffect
+                                                val info = snapshotFlow { grid.layoutInfo }.first { it.totalItemsCount > index }
+                                                val seen = info.visibleItemsInfo.firstOrNull { it.index == index }
+                                                if (seen == null || seen.offset.y + seen.size.height > info.viewportEndOffset) {
+                                                    grid.scrollToItem(index)
+                                                    grid.scrollBy(-info.viewportSize.height / 3f)
+                                                }
+                                            }
+                                            key(destination) {
+                                                LazyVerticalGrid(
+                                                    columns = GridCells.Adaptive(112.dp),
+                                                    modifier = Modifier.fillMaxSize(),
+                                                    state = grid,
+                                                    contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 16.dp, bottom = 40.dp),
+                                                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                                                ) { gallery(destination) }
+                                            }
                                         }
                                     }
-                                    key(face) {
-                                        LazyVerticalGrid(
-                                            columns = GridCells.Adaptive(112.dp),
-                                            modifier = Modifier.fillMaxSize(),
-                                            state = grid,
-                                            contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 16.dp, bottom = 40.dp),
-                                            horizontalArrangement = Arrangement.spacedBy(16.dp),
-                                            verticalArrangement = Arrangement.spacedBy(16.dp),
-                                        ) { gallery() }
-                                    }
                                 }
                             }
-                        }
-                    } else {
-                        var tuneOpen by remember { mutableStateOf(false) }
-                        Box(Modifier.weight(1f).fillMaxWidth()) {
-                            LazyVerticalGrid(
-                                columns = GridCells.Adaptive(100.dp),
-                                modifier = Modifier.fillMaxSize(),
-                                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 96.dp),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                verticalArrangement = Arrangement.spacedBy(14.dp),
-                            ) {
-                                item(span = { GridItemSpan(maxLineSpan) }) {
-                                    Column(
-                                        Modifier.fillMaxWidth().padding(top = 12.dp).background(palette.bg.toComposeColor(), RoundedCornerShape(12.dp)).padding(14.dp),
-                                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                                    ) {
-                                        Sheets(120.dp, 170.dp)
-                                        if (!coverOnly) FormatRow()
+                        } else {
+                            var tuneOpen by remember { mutableStateOf(false) }
+                            Box(Modifier.weight(1f).fillMaxWidth()) {
+                                LazyVerticalGrid(
+                                    columns = GridCells.Adaptive(100.dp),
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 96.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                                ) {
+                                    item(key = "new-note-preview", span = { GridItemSpan(maxLineSpan) }) {
+                                        Column(
+                                            Modifier.fillMaxWidth().padding(top = 12.dp).background(palette.bg.toComposeColor(), RoundedCornerShape(12.dp)).padding(14.dp),
+                                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                                        ) {
+                                            Sheets(120.dp, 170.dp)
+                                            if (!coverOnly) FormatRow()
+                                        }
                                     }
-                                }
-                                item(span = { GridItemSpan(maxLineSpan) }) { Tabs() }
-                                if (aiOpen) {
-                                    item(span = { GridItemSpan(maxLineSpan) }) {
-                                        AiTemplateTab(coverOnly, wide = false, onImport = onImportTemplate, modifier = Modifier.padding(top = 12.dp))
+                                    item(key = "new-note-tabs", span = { GridItemSpan(maxLineSpan) }) { Tabs() }
+                                    item(key = "ai-template-panel", span = { GridItemSpan(maxLineSpan) }) {
+                                        Box(Modifier.animateItem(fadeInSpec = materialItemFadeSpec, placementSpec = materialItemPlacementSpec, fadeOutSpec = materialItemFadeSpec)) {
+                                            Column {
+                                                AnimatedVisibility(
+                                                    visible = aiOpen,
+                                                    enter = materialExpandEnter(),
+                                                    exit = materialExpandExit(),
+                                                    label = "generate with AI panel",
+                                                ) {
+                                                    AiTemplateTab(coverOnly, wide = false, onImport = onImportTemplate, modifier = Modifier.padding(top = 12.dp))
+                                                }
+                                            }
+                                        }
                                     }
-                                } else gallery()
-                            }
-                            Row(
-                                Modifier
-                                    .align(Alignment.BottomCenter)
-                                    .fillMaxWidth()
-                                    .background(palette.menuBg.toComposeColor(), RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
-                                    .clickable { tuneOpen = true }
-                                    .padding(horizontal = 20.dp, vertical = 16.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(
-                                        when {
-                                            face == Face.PAGES -> pageT?.name ?: stringResource(R.string.plain_paper)
-                                            hasCover -> coverT!!.name
-                                            else -> stringResource(R.string.no_cover)
-                                        },
-                                        color = text, fontSize = 15.sp, fontWeight = FontWeight.Medium,
-                                    )
-                                    Text(stringResource(if (face == Face.PAGES) R.string.every_page else R.string.cover), color = dim, fontSize = 12.sp)
+                                    if (!aiOpen) gallery(face)
                                 }
-                                Text(stringResource(R.string.customize), color = accent, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                                Row(
+                                    Modifier
+                                        .align(Alignment.BottomCenter)
+                                        .fillMaxWidth()
+                                        .background(palette.menuBg.toComposeColor(), RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+                                        .clickable { tuneOpen = true }
+                                        .padding(horizontal = 20.dp, vertical = 16.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text(
+                                            when {
+                                                face == Face.PAGES -> pageT?.name ?: stringResource(R.string.plain_paper)
+                                                hasCover -> coverT!!.name
+                                                else -> stringResource(R.string.no_cover)
+                                            },
+                                            color = text, fontSize = 15.sp, fontWeight = FontWeight.Medium,
+                                        )
+                                        Text(stringResource(if (face == Face.PAGES) R.string.every_page else R.string.cover), color = dim, fontSize = 12.sp)
+                                    }
+                                    Text(stringResource(R.string.customize), color = accent, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                                }
                             }
-                        }
-                        if (tuneOpen) {
-                            ModalBottomSheet(onDismissRequest = { tuneOpen = false }, containerColor = palette.menuBg.toComposeColor()) {
-                                Column(Modifier.padding(horizontal = 20.dp).verticalScroll(rememberScrollState())) { Tune() }
+                            if (tuneOpen) {
+                                ModalBottomSheet(onDismissRequest = { tuneOpen = false }, containerColor = palette.menuBg.toComposeColor()) {
+                                    Column(Modifier.padding(horizontal = 20.dp).verticalScroll(rememberScrollState())) { Tune() }
+                                }
                             }
                         }
                     }
+                    SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter))
                 }
-                SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter))
             }
         }
     }
+}
+
+@Composable
+private fun OrientationGlyph(landscape: Boolean, label: String, tint: Color) {
+    Box(
+        Modifier.size(24.dp).semantics { contentDescription = label },
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            Modifier
+                .size(if (landscape) 17.dp else 11.dp, if (landscape) 11.dp else 17.dp)
+                .border(2.dp, tint, RoundedCornerShape(2.dp)),
+        )
+    }
+}
+
+/** A gallery tag filter: M3's selected check and container distinguish the active content filter. */
+@Composable
+private fun TemplateFilterChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    val palette = LocalPalette.current
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        label = { Text(label) },
+        shapes = FilterChipDefaults.shapes(),
+        leadingIcon = if (selected) {
+            {
+                Icon(XnotesIcons.check, null, modifier = Modifier.size(FilterChipDefaults.IconSize))
+            }
+        } else {
+            null
+        },
+        border = FilterChipDefaults.filterChipBorder(
+            enabled = true,
+            selected = selected,
+            borderColor = palette.border.toComposeColor(),
+        ),
+        colors = FilterChipDefaults.filterChipColors(
+            containerColor = palette.surface.toComposeColor(),
+            labelColor = palette.text.toComposeColor(),
+            iconColor = palette.textDim.toComposeColor(),
+            selectedContainerColor = palette.materialColors.secondaryContainer.toComposeColor(),
+            selectedLabelColor = palette.materialColors.onSecondaryContainer.toComposeColor(),
+            selectedLeadingIconColor = palette.materialColors.onSecondaryContainer.toComposeColor(),
+        ),
+    )
 }

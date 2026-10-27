@@ -1,5 +1,11 @@
 package com.xnotes.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -10,6 +16,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
@@ -21,14 +28,28 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ToggleButton
+import androidx.compose.material3.ToggleButtonDefaults
+import androidx.compose.material3.ToggleButtonSize
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -44,6 +65,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -107,6 +129,92 @@ internal fun ExplorerChip(
     else Tooltip(label) { ChipBody(label, on, modifier, icon, trailing, labelled, onClick) }
 }
 
+/** A selectable explorer option: real filter-chip semantics, with the app's palette. */
+@Composable
+internal fun ExplorerFilterChip(
+    label: String,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    icon: ImageVector? = null,
+    trailing: ImageVector? = null,
+    onClick: () -> Unit,
+) {
+    val palette = LocalPalette.current
+    val selectedFg = palette.materialColors.onSecondaryContainer.toComposeColor()
+    val unselectedIcon = palette.textDim.toComposeColor()
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        modifier = modifier,
+        label = { Text(label, maxLines = 1, softWrap = false) },
+        leadingIcon = (if (selected) XnotesIcons.check else icon)?.let { image ->
+            {
+                Icon(
+                    image,
+                    contentDescription = null,
+                    tint = if (selected) selectedFg else unselectedIcon,
+                    modifier = Modifier.size(FilterChipDefaults.IconSize),
+                )
+            }
+        },
+        trailingIcon = trailing?.let { image ->
+            {
+                Icon(
+                    image,
+                    contentDescription = null,
+                    tint = if (selected) selectedFg else unselectedIcon,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+        },
+        shapes = FilterChipDefaults.shapes(),
+        border = FilterChipDefaults.filterChipBorder(
+            enabled = true,
+            selected = selected,
+            borderColor = palette.border.toComposeColor(),
+        ),
+        colors = FilterChipDefaults.filterChipColors(
+            containerColor = palette.surface.toComposeColor(),
+            labelColor = palette.text.toComposeColor(),
+            iconColor = unselectedIcon,
+            selectedContainerColor = palette.materialColors.secondaryContainer.toComposeColor(),
+            selectedLabelColor = selectedFg,
+            selectedLeadingIconColor = selectedFg,
+            selectedTrailingIconColor = selectedFg,
+        ),
+    )
+}
+
+/** A persistent display preference is a toggle, not a filter on the explorer's contents. */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun ExplorerToggleButton(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    val palette = LocalPalette.current
+    val checkedFg = palette.materialColors.onSecondaryContainer.toComposeColor()
+    ToggleButton(
+        checked = checked,
+        onCheckedChange = onCheckedChange,
+        buttonSize = ToggleButtonSize.ExtraSmall,
+        icon = if (checked) {
+            {
+                Icon(XnotesIcons.check, null, modifier = Modifier.size(18.dp))
+            }
+        } else {
+            null
+        },
+        border = BorderStroke(1.dp, (if (checked) palette.accent else palette.border).toComposeColor()),
+        colors = ToggleButtonDefaults.colors(
+            containerColor = palette.surface.toComposeColor(),
+            contentColor = palette.text.toComposeColor(),
+            checkedContainerColor = palette.materialColors.secondaryContainer.toComposeColor(),
+            checkedContentColor = checkedFg,
+        ),
+        contentPadding = PaddingValues(horizontal = 12.dp),
+    ) {
+        Text(label, maxLines = 1, softWrap = false)
+    }
+}
+
 @Composable
 private fun ChipBody(
     label: String,
@@ -120,20 +228,27 @@ private fun ChipBody(
     val palette = LocalPalette.current
     val fg = (if (on) palette.selectionForeground else palette.text).toComposeColor()
     val iconTint = (if (on) palette.selectionForeground else palette.textDim).toComposeColor()
-    Row(
+    Box(
         modifier
-            .height(32.dp)
-            .clip(MaterialTheme.shapes.small)
-            .background(if (on) palette.selectionBackground.toComposeColor() else palette.surface.toComposeColor())
-            .border(1.dp, if (on) palette.accent.toComposeColor() else palette.border.toComposeColor(), MaterialTheme.shapes.small)
-            .clickable(onClick = onClick)
-            .padding(start = if (icon != null) 8.dp else 12.dp, end = if (trailing != null || !labelled) 8.dp else 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+            // Keep the compact 32dp chip surface while giving it the standard 48dp touch target.
+            .minimumInteractiveComponentSize()
+            .clickable(role = Role.Button, onClick = onClick),
+        contentAlignment = Alignment.Center,
     ) {
-        if (icon != null) Icon(icon, if (labelled) null else label, tint = iconTint, modifier = Modifier.size(16.dp))
-        if (labelled) Text(label, color = fg, fontSize = 13.5.sp, maxLines = 1, softWrap = false)
-        if (trailing != null) Icon(trailing, null, tint = iconTint, modifier = Modifier.size(14.dp))
+        Row(
+            Modifier
+                .height(32.dp)
+                .clip(MaterialTheme.shapes.small)
+                .background(if (on) palette.selectionBackground.toComposeColor() else palette.surface.toComposeColor())
+                .border(1.dp, if (on) palette.accent.toComposeColor() else palette.border.toComposeColor(), MaterialTheme.shapes.small)
+                .padding(start = if (icon != null) 8.dp else 12.dp, end = if (trailing != null || !labelled) 8.dp else 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+        ) {
+            if (icon != null) Icon(icon, if (labelled) null else label, tint = iconTint, modifier = Modifier.size(16.dp))
+            if (labelled) Text(label, color = fg, fontSize = 13.5.sp, maxLines = 1, softWrap = false)
+            if (trailing != null) Icon(trailing, null, tint = iconTint, modifier = Modifier.size(14.dp))
+        }
     }
 }
 
@@ -197,22 +312,19 @@ internal fun Modifier.liftPadding(lift: () -> Float, pad: Dp): Modifier = layout
 internal fun LayoutSwitcher(layouts: List<ExplorerLayout>, current: ExplorerLayout, lift: () -> Float = { 0f }, onPick: (ExplorerLayout) -> Unit) {
     val palette = LocalPalette.current
     val shape = MaterialTheme.shapes.medium
-    Row(
-        Modifier.height(40.dp).floatingBacking(lift, shape, palette.surface.toComposeColor(), Color.Transparent)
-            .clip(shape).border(1.dp, palette.border.toComposeColor(), shape),
+    SingleChoiceSegmentedButtonRow(
+        modifier = Modifier.floatingBacking(lift, shape, palette.surface.toComposeColor(), Color.Transparent),
     ) {
-        layouts.forEach { l ->
-            val on = l == current
-            Tooltip(stringResource(l.labelRes)) {
-                Box(
-                    Modifier
-                        .width(42.dp)
-                        .height(40.dp)
-                        .background(if (on) palette.selectionBackground.toComposeColor() else Color.Transparent)
-                        .clickable { onPick(l) },
-                    contentAlignment = Alignment.Center,
+        layouts.forEachIndexed { index, layout ->
+            Tooltip(stringResource(layout.labelRes)) {
+                SegmentedButton(
+                    selected = layout == current,
+                    onClick = { onPick(layout) },
+                    shape = SegmentedButtonDefaults.itemShape(index, layouts.size, baseShape = shape),
+                    modifier = Modifier.width(42.dp).height(40.dp),
+                    icon = {},
                 ) {
-                    Icon(layoutIcon(l), stringResource(l.labelRes), tint = (if (on) palette.selectionForeground else palette.textDim).toComposeColor(), modifier = Modifier.size(20.dp))
+                    Icon(layoutIcon(layout), stringResource(layout.labelRes), modifier = Modifier.size(20.dp))
                 }
             }
         }
@@ -248,6 +360,19 @@ internal fun GroupHeader(label: String, count: Int, color: Rgba? = null, modifie
 /** A colour code as drawn on the explorer's chrome: as stored in the dark themes, deepened in the light one. */
 internal fun codeTint(c: Rgba, palette: Palette): Color =
     (if (palette.isDark) c else com.xnotes.ui.theme.ColorMath.darkenForLight(c)).toComposeColor()
+
+@Composable
+private fun explorerSegmentedButtonColors(
+    palette: Palette,
+    inactiveContainerColor: Color = Color.Transparent,
+) = SegmentedButtonDefaults.colors(
+    activeContainerColor = palette.selectionBackground.toComposeColor(),
+    activeContentColor = palette.selectionForeground.toComposeColor(),
+    activeBorderColor = palette.accent.toComposeColor(),
+    inactiveContainerColor = inactiveContainerColor,
+    inactiveContentColor = palette.text.toComposeColor(),
+    inactiveBorderColor = palette.border.toComposeColor(),
+)
 
 /** The bar that replaces the chip row while items are selected. */
 @Composable
@@ -337,15 +462,39 @@ internal fun TileBadge(icon: ImageVector, text: String, modifier: Modifier = Mod
 @Composable
 internal fun CheckRing(selected: Boolean, modifier: Modifier = Modifier) {
     val palette = LocalPalette.current
+    val accent = palette.accent.toComposeColor()
+    val fill by animateColorAsState(
+        targetValue = if (selected) accent else Color.Black.copy(alpha = 0.3f),
+        animationSpec = XnotesMotion.fastEffectsSpec(),
+        label = "selection ring fill",
+    )
+    val stroke by animateColorAsState(
+        targetValue = if (selected) accent else Color.White.copy(alpha = 0.85f),
+        animationSpec = XnotesMotion.fastEffectsSpec(),
+        label = "selection ring outline",
+    )
     Box(
         modifier
             .size(24.dp)
             .clip(CircleShape)
-            .background(if (selected) palette.accent.toComposeColor() else Color.Black.copy(alpha = 0.3f))
-            .border(2.dp, if (selected) palette.accent.toComposeColor() else Color.White.copy(alpha = 0.85f), CircleShape),
+            .background(fill)
+            .border(2.dp, stroke, CircleShape),
         contentAlignment = Alignment.Center,
     ) {
-        if (selected) Icon(XnotesIcons.check, null, tint = palette.onAccent.toComposeColor(), modifier = Modifier.size(14.dp))
+        AnimatedVisibility(
+            visible = selected,
+            enter = scaleIn(
+                initialScale = 0.55f,
+                animationSpec = XnotesMotion.fastSpatialSpec(),
+            ) + fadeIn(XnotesMotion.fastEffectsSpec()),
+            exit = scaleOut(
+                targetScale = 0.7f,
+                animationSpec = XnotesMotion.fastSpatialSpec(),
+            ) + fadeOut(XnotesMotion.fastEffectsSpec()),
+            label = "selection ring check",
+        ) {
+            Icon(XnotesIcons.check, null, tint = palette.onAccent.toComposeColor(), modifier = Modifier.size(14.dp))
+        }
     }
 }
 
@@ -354,15 +503,39 @@ internal fun CheckRing(selected: Boolean, modifier: Modifier = Modifier) {
 internal fun RowCheck(selected: Boolean, modifier: Modifier = Modifier) {
     val palette = LocalPalette.current
     val shape = RoundedCornerShape(3.dp)
+    val accent = palette.accent.toComposeColor()
+    val fill by animateColorAsState(
+        targetValue = if (selected) accent else Color.Transparent,
+        animationSpec = XnotesMotion.fastEffectsSpec(),
+        label = "row selection fill",
+    )
+    val stroke by animateColorAsState(
+        targetValue = if (selected) accent else palette.textDim.toComposeColor(),
+        animationSpec = XnotesMotion.fastEffectsSpec(),
+        label = "row selection outline",
+    )
     Box(
         modifier
             .size(18.dp)
             .clip(shape)
-            .background(if (selected) palette.accent.toComposeColor() else Color.Transparent)
-            .border(2.dp, if (selected) palette.accent.toComposeColor() else palette.textDim.toComposeColor(), shape),
+            .background(fill)
+            .border(2.dp, stroke, shape),
         contentAlignment = Alignment.Center,
     ) {
-        if (selected) Icon(XnotesIcons.check, null, tint = palette.onAccent.toComposeColor(), modifier = Modifier.size(12.dp))
+        AnimatedVisibility(
+            visible = selected,
+            enter = scaleIn(
+                initialScale = 0.55f,
+                animationSpec = XnotesMotion.fastSpatialSpec(),
+            ) + fadeIn(XnotesMotion.fastEffectsSpec()),
+            exit = scaleOut(
+                targetScale = 0.7f,
+                animationSpec = XnotesMotion.fastSpatialSpec(),
+            ) + fadeOut(XnotesMotion.fastEffectsSpec()),
+            label = "row selection check",
+        ) {
+            Icon(XnotesIcons.check, null, tint = palette.onAccent.toComposeColor(), modifier = Modifier.size(12.dp))
+        }
     }
 }
 
@@ -386,51 +559,61 @@ internal fun ViewOptionsContent(
     Column(Modifier.widthIn(max = 372.dp).padding(start = 18.dp, end = 12.dp, top = 6.dp, bottom = 10.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(R.string.toolbar_view), color = palette.text.toComposeColor(), fontSize = 16.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
-            Text(
-                stringResource(R.string.reset),
-                color = palette.accent.toComposeColor(),
-                fontSize = 13.5.sp,
-                fontWeight = FontWeight.Medium,
-                modifier = Modifier.clip(MaterialTheme.shapes.extraSmall).clickable(onClick = onReset).padding(horizontal = 8.dp, vertical = 6.dp),
-            )
+            TextButton(onClick = onReset) { Text(stringResource(R.string.reset)) }
             ExplorerIcon(XnotesIcons.close, stringResource(R.string.close_view_options), palette.textDim.toComposeColor(), onClick = onClose)
         }
         OptionBlock(stringResource(R.string.opt_layout)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                layouts.forEach { l ->
-                    val on = l == layout
-                    val shape = MaterialTheme.shapes.medium
-                    Column(
-                        Modifier
-                            .width(62.dp)
-                            .height(62.dp)
-                            .clip(shape)
-                            .background(if (on) palette.selectionBackground.toComposeColor() else Color.Transparent)
-                            .border(1.dp, if (on) palette.accent.toComposeColor() else palette.border.toComposeColor(), shape)
-                            .clickable { onChange(view.copy(layout = l)) },
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center,
+            val shape = MaterialTheme.shapes.medium
+            val colors = explorerSegmentedButtonColors(palette)
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                layouts.forEachIndexed { index, l ->
+                    val selected = l == layout
+                    SegmentedButton(
+                        selected = selected,
+                        onClick = { onChange(view.copy(layout = l)) },
+                        shape = SegmentedButtonDefaults.itemShape(index, layouts.size, baseShape = shape),
+                        colors = colors,
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp),
+                        modifier = Modifier.weight(1f).height(62.dp),
+                        icon = {},
                     ) {
-                        val tint = (if (on) palette.selectionForeground else palette.textDim).toComposeColor()
-                        Icon(layoutIcon(l), null, tint = tint, modifier = Modifier.size(20.dp))
-                        Spacer(Modifier.height(5.dp))
-                        Text(stringResource(l.labelRes), color = tint, fontSize = 11.5.sp, lineHeight = 14.sp, maxLines = 1)
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Icon(layoutIcon(l), null, tint = if (selected) palette.selectionForeground.toComposeColor() else palette.textDim.toComposeColor(), modifier = Modifier.size(20.dp))
+                            Text(
+                                stringResource(l.labelRes),
+                                color = if (selected) palette.selectionForeground.toComposeColor() else palette.text.toComposeColor(),
+                                fontSize = 11.5.sp,
+                                lineHeight = 14.sp,
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                     }
                 }
             }
         }
         if (layout == ExplorerLayout.LIST) {
             OptionBlock(stringResource(R.string.opt_rows)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ExplorerChip(stringResource(R.string.rows_comfortable), !view.compactRows) { onChange(view.copy(compactRows = false)) }
-                    ExplorerChip(stringResource(R.string.rows_compact), view.compactRows) { onChange(view.copy(compactRows = true)) }
-                }
+                ExpressiveChoiceGroup(
+                    options = listOf(
+                        false to stringResource(R.string.rows_comfortable),
+                        true to stringResource(R.string.rows_compact),
+                    ),
+                    selected = view.compactRows,
+                    onSelect = { onChange(view.copy(compactRows = it)) },
+                )
             }
         } else if (layout != ExplorerLayout.COLUMNS) {
             OptionBlock(stringResource(R.string.opt_tile_size)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TileSize.entries.forEach { t -> ExplorerChip(t.label, view.tileSize == t, Modifier.widthIn(min = 48.dp)) { onChange(view.copy(tileSize = t)) } }
-                }
+                ExpressiveChoiceGroup(
+                    options = TileSize.entries.map { it to it.label },
+                    selected = view.tileSize,
+                    onSelect = { onChange(view.copy(tileSize = it)) },
+                )
                 if (layout == ExplorerLayout.GRID) {
                     Text(stringResource(R.string.pinch_hint), color = palette.textDim.toComposeColor(), fontSize = 12.sp)
                 }
@@ -438,67 +621,107 @@ internal fun ViewOptionsContent(
         }
         if (layout == ExplorerLayout.TIMELINE) {
             OptionBlock(stringResource(R.string.opt_place_by)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ExplorerChip(stringResource(R.string.sort_created), view.timelineByCreated) { onChange(view.copy(timelineByCreated = true)) }
-                    ExplorerChip(stringResource(R.string.sort_modified), !view.timelineByCreated) { onChange(view.copy(timelineByCreated = false)) }
-                }
+                ExpressiveChoiceGroup(
+                    options = listOf(
+                        true to stringResource(R.string.sort_created),
+                        false to stringResource(R.string.sort_modified),
+                    ),
+                    selected = view.timelineByCreated,
+                    onSelect = { onChange(view.copy(timelineByCreated = it)) },
+                )
             }
         }
         if (layout == ExplorerLayout.GRID) {
             OptionBlock(stringResource(R.string.opt_thumbnail)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ExplorerChip(stringResource(R.string.thumb_top), view.thumb == ThumbShape.TOP) { onChange(view.copy(thumb = ThumbShape.TOP)) }
-                    ExplorerChip(stringResource(R.string.thumb_page), view.thumb == ThumbShape.PAGE) { onChange(view.copy(thumb = ThumbShape.PAGE)) }
-                }
+                ExpressiveChoiceGroup(
+                    options = listOf(
+                        ThumbShape.TOP to stringResource(R.string.thumb_top),
+                        ThumbShape.PAGE to stringResource(R.string.thumb_page),
+                    ),
+                    selected = view.thumb,
+                    onSelect = { onChange(view.copy(thumb = it)) },
+                )
             }
         }
         if (layout == ExplorerLayout.GRID || layout == ExplorerLayout.GALLERY || layout == ExplorerLayout.TIMELINE) {
             OptionBlock(stringResource(R.string.opt_show_on_tiles)) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     @Composable
-                    fun toggle(label: String, on: Boolean, flip: () -> ExplorerView) =
-                        ExplorerChip(label, on, icon = if (on) XnotesIcons.check else XnotesIcons.plus) { onChange(flip()) }
-                    toggle(stringResource(R.string.group_kind), view.showKind) { view.copy(showKind = !view.showKind) }
+                    fun toggle(label: String, checked: Boolean, update: (Boolean) -> ExplorerView) =
+                        ExplorerToggleButton(label, checked) { onChange(update(it)) }
+                    toggle(stringResource(R.string.group_kind), view.showKind) { view.copy(showKind = it) }
                     if (layout != ExplorerLayout.TIMELINE) {
-                        toggle(stringResource(R.string.show_page_count), view.showPages) { view.copy(showPages = !view.showPages) }
-                        toggle(stringResource(R.string.show_time), view.showTime) { view.copy(showTime = !view.showTime) }
-                        toggle(stringResource(R.string.sort_size), view.showSize) { view.copy(showSize = !view.showSize) }
+                        toggle(stringResource(R.string.show_page_count), view.showPages) { view.copy(showPages = it) }
+                        toggle(stringResource(R.string.show_time), view.showTime) { view.copy(showTime = it) }
+                        toggle(stringResource(R.string.sort_size), view.showSize) { view.copy(showSize = it) }
                     }
-                    toggle(stringResource(R.string.colour_code), view.showColour) { view.copy(showColour = !view.showColour) }
+                    toggle(stringResource(R.string.colour_code), view.showColour) { view.copy(showColour = it) }
                 }
             }
         }
         if (layout != ExplorerLayout.COLUMNS && layout != ExplorerLayout.TIMELINE) {
             OptionBlock(stringResource(R.string.opt_group_by)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    GroupBy.entries.forEach { g -> ExplorerChip(stringResource(g.labelRes), view.groupBy == g) { onChange(view.copy(groupBy = g)) } }
-                }
+                ExpressiveChoiceGroup(
+                    options = GroupBy.entries.map { it to stringResource(it.labelRes) },
+                    selected = view.groupBy,
+                    onSelect = { onChange(view.copy(groupBy = it)) },
+                )
             }
         }
         if (layout != ExplorerLayout.TIMELINE) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(stringResource(R.string.sort_by), color = palette.accent.toComposeColor(), fontSize = 13.sp, modifier = Modifier.weight(1f))
+                    Text(
+                        stringResource(R.string.sort_by),
+                        color = palette.textDim.toComposeColor(),
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.weight(1f),
+                    )
                     Text(directionLabel(view.sortKey, view.descending), color = palette.textDim.toComposeColor(), fontSize = 12.sp)
+                    Spacer(Modifier.width(4.dp))
+                    ExplorerIcon(
+                        if (view.descending) XnotesIcons.arrowDown else XnotesIcons.arrowUp,
+                        stringResource(R.string.toggle_sort_order),
+                    ) { onChange(view.copy(descending = !view.descending)) }
                 }
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(ExplorerSortKey.NAME to stringResource(R.string.sort_name), ExplorerSortKey.MODIFIED to stringResource(R.string.modified), ExplorerSortKey.CREATED to stringResource(R.string.created), ExplorerSortKey.SIZE to stringResource(R.string.sort_size)).forEach { (k, label) ->
-                        val active = view.sortKey == k
-                        ExplorerChip(label, active, trailing = if (active) (if (view.descending) XnotesIcons.arrowDown else XnotesIcons.arrowUp) else null) {
-                            onChange(if (active) view.copy(descending = !view.descending) else view.copy(sortKey = k, descending = k != ExplorerSortKey.NAME))
+                val sortOptions = listOf(
+                    ExplorerSortKey.NAME to stringResource(R.string.sort_name),
+                    ExplorerSortKey.MODIFIED to stringResource(R.string.modified),
+                    ExplorerSortKey.CREATED to stringResource(R.string.created),
+                    ExplorerSortKey.SIZE to stringResource(R.string.sort_size),
+                )
+                val sortColors = explorerSegmentedButtonColors(palette, palette.surface.toComposeColor())
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                    sortOptions.forEachIndexed { index, (key, label) ->
+                        val selected = view.sortKey == key
+                        SegmentedButton(
+                            selected = selected,
+                            onClick = {
+                                if (!selected) {
+                                    onChange(view.copy(sortKey = key, descending = key != ExplorerSortKey.NAME))
+                                }
+                            },
+                            shape = SegmentedButtonDefaults.itemShape(index, sortOptions.size, baseShape = MaterialTheme.shapes.medium),
+                            colors = sortColors,
+                        ) {
+                            Text(label, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
                         }
                     }
                 }
             }
             OptionBlock(stringResource(R.string.kind_folders)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FolderPlacement.entries.forEach { f -> ExplorerChip(stringResource(f.labelRes), view.folders == f) { onChange(view.copy(folders = f)) } }
-                }
+                ExpressiveChoiceGroup(
+                    options = FolderPlacement.entries.map { it to stringResource(it.labelRes) },
+                    selected = view.folders,
+                    onSelect = { onChange(view.copy(folders = it)) },
+                )
             }
         }
         HorizontalDivider(color = palette.border.toComposeColor())
         Row(
-            Modifier.fillMaxWidth().clip(MaterialTheme.shapes.extraSmall).clickable { onEveryFolder(!everyFolder) }.padding(vertical = 2.dp),
+            Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(MaterialTheme.shapes.extraSmall)
+                .toggleable(value = everyFolder, role = Role.Checkbox, onValueChange = onEveryFolder)
+                .padding(vertical = 2.dp),
             verticalAlignment = Alignment.Top,
         ) {
             RowCheck(everyFolder, Modifier.padding(top = 3.dp))
@@ -514,7 +737,7 @@ internal fun ViewOptionsContent(
 @Composable
 private fun OptionBlock(label: String, content: @Composable () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(label, color = LocalPalette.current.accent.toComposeColor(), fontSize = 13.sp)
+        Text(label, color = LocalPalette.current.textDim.toComposeColor(), style = MaterialTheme.typography.labelLarge)
         content()
     }
 }

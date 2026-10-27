@@ -48,7 +48,6 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -130,8 +129,14 @@ internal fun ColorPickerPopup(
     DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
         Column(Modifier.width(GRID_W.dp).padding(horizontal = 12.dp, vertical = 8.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                TabChip(stringResource(R.string.swatches), tab == 0) { tab = 0 }
-                TabChip(stringResource(R.string.spectrum), tab == 1) { tab = 1 }
+                ExpressiveChoiceGroup(
+                    options = listOf(
+                        0 to stringResource(R.string.swatches),
+                        1 to stringResource(R.string.spectrum),
+                    ),
+                    selected = tab,
+                    onSelect = { tab = it },
+                )
             }
             Spacer(Modifier.size(12.dp))
             when (tab) {
@@ -505,26 +510,6 @@ internal fun FieldFrame(modifier: Modifier = Modifier, content: @Composable RowS
             .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) { content() }
-}
-
-@Composable
-private fun TabChip(label: String, selected: Boolean, onClick: () -> Unit) {
-    val palette = LocalPalette.current
-    Box(
-        Modifier
-            .clip(MaterialTheme.shapes.extraSmall)
-            .background(if (selected) palette.selectionBackground.toComposeColor() else palette.surface.toComposeColor())
-            .border(1.dp, if (selected) palette.accent.toComposeColor() else palette.border.toComposeColor(), MaterialTheme.shapes.extraSmall)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 6.dp),
-    ) {
-        Text(
-            label,
-            color = if (selected) palette.selectionForeground.toComposeColor() else palette.text.toComposeColor(),
-            fontWeight = FontWeight.Medium,
-            fontSize = 12.sp,
-        )
-    }
 }
 
 @Composable

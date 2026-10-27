@@ -356,13 +356,20 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      *  is swapped out (transient docs used for export/thumbnails manage their own files locally). */
     private var openPdfTemp: java.io.File? = null
 
+    /** False while the first visible page of a newly opened note is still rasterizing. */
+    var noteContentReady by mutableStateOf(true)
+        private set
+
     val state = CanvasState(
         blankDocument().also { stampNewNoteDefaults(it) },
         AndroidSurfaceFactory(),
         buildPalette(settings.prefs),
     )
     val history = History()
-    val view = CanvasView(context).also { it.state = state }
+    val view = CanvasView(context).also {
+        it.state = state
+        it.onInitialDocumentFrameReady = { com.xnotes.platform.renderTrace("xnotes.note.firstFrameReady") { noteContentReady = true } }
+    }
 
     /** The front buffer wet ink goes into, above [view] and transparent whenever no pen is down. */
     val pad = com.xnotes.gl.GlWetPad(context, onTop = true)
@@ -675,7 +682,6 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      *  bare root of the stack. Starts false so every launch lands on home with no phantom note. */
     var noteOpen by mutableStateOf(false)
         private set
-
     /** True when the open document is an infinite canvas rather than a paged note, so the editor
      *  layer hosts the GL canvas and its own chrome. Meaningful only while [noteOpen]. */
     var canvasOpen by mutableStateOf(false)
@@ -5946,6 +5952,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     }
 
     private fun replaceDocument(doc: Document) {
+        noteContentReady = false
         AudioRecording.stopFor(this) // closing the note places its recording
         AudioPlayback.closeFor(this)
         saveViewState() // remember the outgoing folder note's view before switching away
@@ -7747,11 +7754,10 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     }
 
     /**
-     * Put [latex] in at the caret as a formula, drawn as one straight away. The
-     * caret lands against its closing edge, which is outside it, so the next key
-     * types beside the equation rather than into its LaTeX. the caret
-     * lands against its closing edge, which is where the source would otherwise
-     * open, and the next key types beside it rather than into it.
+     * Put [latex] at the caret, replacing selected text, as a formula drawn as
+     * one straight away. The caret lands against its closing edge, which is
+     * outside it, so the next key types beside the equation rather than into its
+     * LaTeX source.
      */
     fun flowInsertMath(latex: String) {
         if (!flowText.active) return
@@ -7759,8 +7765,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         if (text.isEmpty() || '\n' in text) return
         flowText.flushBurst()
         flowText.mirrorStale = true
-        val at = flowText.selection.normalized().start
-        val (cmd, caret) = FlowEditor(state.document.flow).insertText(at, text, CharStyle(math = true))
+        val selection = flowText.selection.normalized()
+        val (cmd, caret) = FlowEditor(state.document.flow).replaceRange(selection, text, CharStyle(math = true))
         flowText.commitEdit(cmd, caret)
         flowText.pendingStyle = CharStyle.DEFAULT
         flowSelTick++
@@ -8161,6 +8167,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         saveViewState()
         flushAutosave()
         autosaveUri = null
+        noteContentReady = false
         state.document = blankDocument().also { stampNewNoteDefaults(it) }
         rebuildPdfSource() // close the outgoing note's PDF source (a blank note has none)
         adoptOpenPdf(state.document) // and reclaim its temp PDF file now it's released
@@ -8252,11 +8259,25 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         if (other.noteOpen) { secondaryStarted = true; return }
         if (!secondaryStarted) return
         secondaryStarted = false
-        com.xnotes.platform.MathRendering.removeListener(other.mathLanded)
+        other.releaseUiResources()
         other.sibling = null
         sibling = null
         secondary = null
         focusedPane = Pane.PRIMARY
+    }
+
+    /** Called after a pane exits, or when the activity's composition is disposed. Saves may finish. */
+    fun releaseUiResources() {
+        com.xnotes.platform.MathRendering.removeListener(mathLanded)
+        controller.resetGestureState()
+        closeSearchSession()
+        // PDFium keeps live documents in a global set; dropping the editor alone cannot free it.
+        pdfSource?.close()
+        pdfSource = null
+        colorDropper.release()
+        thumbDispatcher.close()
+        infiniteOrNull?.release()
+        secondary?.releaseUiResources()
     }
 
     /** Close every open pane, so the backstage is what's left. */

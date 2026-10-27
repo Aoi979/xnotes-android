@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -75,10 +76,10 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
 
-/** Columns the grid shows at [size], from the screen's width so folding the sidebar never reflows it. */
-internal fun gridColumns(screenWidthDp: Int, size: TileSize): Int {
+/** Columns the grid shows at [size], from the explorer pane's usable width. */
+internal fun gridColumns(availableWidthDp: Int, size: TileSize): Int {
     val tile = when (size) { TileSize.S -> 180f; TileSize.M -> 240f; TileSize.L -> 320f; TileSize.XL -> 420f }
-    return Math.round(screenWidthDp / tile).coerceIn(1, 10)
+    return Math.round(availableWidthDp / tile).coerceIn(1, 10)
 }
 
 /** Columns the gallery shows at [size]: as many upright pages as stand side by side in [width], the explorer's beside the rail. */
@@ -107,17 +108,21 @@ internal fun GridBody(b: ExplorerBody, state: LazyGridState, columns: Int, chips
         item(key = "chips", span = { GridItemSpan(maxLineSpan) }, contentType = "chips") { chips(48.dp) }
         top?.invoke(this)
         if (b.folders.isNotEmpty()) {
-            items(b.folders, key = { it.documentUri }, contentType = { "folder" }) { FolderChipTile(b, it) }
+            items(b.folders, key = { it.documentUri }, contentType = { "folder" }) { entry ->
+                Box(Modifier.animateItem(fadeInSpec = materialItemFadeSpec, placementSpec = materialItemPlacementSpec, fadeOutSpec = materialItemFadeSpec)) { FolderChipTile(b, entry) }
+            }
             item(span = { GridItemSpan(maxLineSpan) }, contentType = "gap") { Spacer(Modifier.height(4.dp)) }
         }
         b.groups.forEach { g ->
             if (g.label.isNotEmpty()) {
                 item(key = "group:${g.key}", span = { GridItemSpan(maxLineSpan) }, contentType = "header") {
-                    GroupHeader(g.label, g.items.size, g.color, Modifier.padding(top = 2.dp))
+                    GroupHeader(g.label, g.items.size, g.color, Modifier.animateItem(fadeInSpec = materialItemFadeSpec, placementSpec = materialItemPlacementSpec, fadeOutSpec = materialItemFadeSpec).padding(top = 2.dp))
                 }
             }
             items(g.items, key = { it.documentUri }, contentType = { if (it.isDir) "folderCard" else "file" }) { e ->
-                if (e.isDir) FolderCardTile(b, e) else GridFileTile(b, e)
+                Box(Modifier.animateItem(fadeInSpec = materialItemFadeSpec, placementSpec = materialItemPlacementSpec, fadeOutSpec = materialItemFadeSpec)) {
+                    if (e.isDir) FolderCardTile(b, e) else GridFileTile(b, e)
+                }
             }
         }
     }
@@ -138,7 +143,9 @@ internal fun ListBody(
     LazyColumn(state = state, modifier = modifier, contentPadding = PaddingValues(top = EXPLORER_HEADER, bottom = 88.dp)) {
         item(key = "chips", contentType = "chips") { chips(48.dp) }
         item(key = "columnHeads", contentType = "columnHeads") {
-            Row(Modifier.fillMaxWidth().height(36.dp).padding(end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            // Sort headings are custom clickable targets rather than Material buttons, so give
+            // them the standard touch height while keeping the table's column alignment intact.
+            Row(Modifier.fillMaxWidth().height(48.dp).padding(end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 ColumnHead(stringResource(R.string.sort_name), ExplorerSortKey.NAME, b, onSort, Modifier.weight(1f).padding(start = inset))
                 if (wide) {
                     ColumnHead(stringResource(R.string.group_kind), null, b, null, Modifier.width(LIST_KIND_W))
@@ -153,18 +160,22 @@ internal fun ListBody(
         }
         top?.invoke(this)
         items(b.folders, key = { it.documentUri }, contentType = { "row" }) { e ->
-            ListRow(b, e, wide)
-            Hairline()
+            Column(Modifier.animateItem(fadeInSpec = materialItemFadeSpec, placementSpec = materialItemPlacementSpec, fadeOutSpec = materialItemFadeSpec)) {
+                ListRow(b, e, wide)
+                Hairline()
+            }
         }
         b.groups.forEach { g ->
             if (g.label.isNotEmpty()) {
                 item(key = "group:${g.key}", contentType = "header") {
-                    GroupHeader(g.label, g.items.size, g.color, Modifier.padding(start = 8.dp, top = 10.dp))
+                    GroupHeader(g.label, g.items.size, g.color, Modifier.animateItem(fadeInSpec = materialItemFadeSpec, placementSpec = materialItemPlacementSpec, fadeOutSpec = materialItemFadeSpec).padding(start = 8.dp, top = 10.dp))
                 }
             }
             items(g.items, key = { it.documentUri }, contentType = { "row" }) { e ->
-                ListRow(b, e, wide)
-                Hairline()
+                Column(Modifier.animateItem(fadeInSpec = materialItemFadeSpec, placementSpec = materialItemPlacementSpec, fadeOutSpec = materialItemFadeSpec)) {
+                    ListRow(b, e, wide)
+                    Hairline()
+                }
             }
         }
     }
@@ -225,7 +236,7 @@ internal fun GalleryBody(b: ExplorerBody, state: LazyGridState, columns: Int, ch
             b.groups.forEach { g ->
                 if (g.label.isNotEmpty()) {
                     item(key = "group:${g.key}", span = { GridItemSpan(maxLineSpan) }, contentType = "header") {
-                        Row(Modifier.height(28.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(Modifier.animateItem(fadeInSpec = materialItemFadeSpec, placementSpec = materialItemPlacementSpec, fadeOutSpec = materialItemFadeSpec).height(28.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             if (g.color != null) Box(Modifier.size(10.dp).clip(CircleShape).background(codeTint(g.color, palette)))
                             Text(g.label, color = palette.text.toComposeColor(), fontSize = 15.sp, fontWeight = FontWeight.Medium)
                             Text("${g.items.size}", color = palette.textDim.toComposeColor(), fontSize = 13.sp)
@@ -234,7 +245,9 @@ internal fun GalleryBody(b: ExplorerBody, state: LazyGridState, columns: Int, ch
                     }
                 }
                 items(g.items, key = { it.documentUri }, contentType = { if (it.isDir) "folder" else "page" }) { e ->
-                    if (e.isDir) FolderCardTile(b, e) else GalleryItem(b, e, shelf)
+                    Box(Modifier.animateItem(fadeInSpec = materialItemFadeSpec, placementSpec = materialItemPlacementSpec, fadeOutSpec = materialItemFadeSpec)) {
+                        if (e.isDir) FolderCardTile(b, e) else GalleryItem(b, e, shelf)
+                    }
                 }
             }
         }
@@ -293,36 +306,40 @@ internal fun ColumnsBody(
                                     val sel = on || b.host.isSelected(e)
                                     val code = b.colorOf(e)?.let { codeTint(it, palette) }
                                     val shape = MaterialTheme.shapes.small
-                                    Row(
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .height(44.dp)
-                                            .clip(shape)
-                                            .background(
-                                                when {
-                                                    sel -> palette.selectionBackground.toComposeColor()
-                                                    onPath -> palette.surfaceHi.toComposeColor()
-                                                    else -> Color.Transparent
-                                                },
+                                    Box(Modifier.animateItem(fadeInSpec = materialItemFadeSpec, placementSpec = materialItemPlacementSpec, fadeOutSpec = materialItemFadeSpec)) {
+                                        Row(
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .height(44.dp)
+                                                .clip(shape)
+                                                .background(
+                                                    when {
+                                                        sel -> palette.selectionBackground.toComposeColor()
+                                                        onPath -> palette.surfaceHi.toComposeColor()
+                                                        else -> Color.Transparent
+                                                    },
+                                                )
+                                                .combinedClickable(
+                                                    interactionSource = remember { MutableInteractionSource() },
+                                                    // Opening a directory stays in this pane; picking a file
+                                                    // starts its shared preview transition.
+                                                    indication = if (e.isDir) LocalIndication.current else null,
+                                                    onClick = { if (e.isDir) onOpenFolder(i, e) else onPickFile(i, e) },
+                                                    onLongClick = { b.host.onLongClick(e) },
+                                                )
+                                                .padding(start = 12.dp, end = 8.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                        ) {
+                                            val fg = (if (sel) palette.selectionForeground else palette.text).toComposeColor()
+                                            Icon(
+                                                kindIcon(b.kind(e)), null,
+                                                tint = if (sel) fg else (code ?: palette.textDim.toComposeColor()),
+                                                modifier = Modifier.size(18.dp),
                                             )
-                                            .combinedClickable(
-                                                interactionSource = remember { MutableInteractionSource() },
-                                                indication = null,
-                                                onClick = { if (e.isDir) onOpenFolder(i, e) else onPickFile(i, e) },
-                                                onLongClick = { b.host.onLongClick(e) },
-                                            )
-                                            .padding(start = 12.dp, end = 8.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                    ) {
-                                        val fg = (if (sel) palette.selectionForeground else palette.text).toComposeColor()
-                                        Icon(
-                                            kindIcon(b.kind(e)), null,
-                                            tint = if (sel) fg else (code ?: palette.textDim.toComposeColor()),
-                                            modifier = Modifier.size(18.dp),
-                                        )
-                                        Text(b.label(e), color = fg, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                                        if (e.isDir) Icon(XnotesIcons.next, null, tint = palette.textDim.toComposeColor(), modifier = Modifier.size(14.dp))
+                                            Text(b.label(e), color = fg, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                                            if (e.isDir) Icon(XnotesIcons.next, null, tint = palette.textDim.toComposeColor(), modifier = Modifier.size(14.dp))
+                                        }
                                     }
                                 }
                             }
@@ -429,7 +446,9 @@ internal fun TimelineBody(
             item(key = "none", contentType = "none") { EmptyNote(stringResource(if (view.timelineByCreated) R.string.nothing_created_in else R.string.nothing_saved_in, b.words.month(month.month))) }
         } else {
             byDay.forEach { (date, files) ->
-                item(key = date.toString()) { TimelineDay(b, date, today, files, card) }
+                item(key = date.toString()) {
+                    Box(Modifier.animateItem(fadeInSpec = materialItemFadeSpec, placementSpec = materialItemPlacementSpec, fadeOutSpec = materialItemFadeSpec)) { TimelineDay(b, date, today, files, card) }
+                }
             }
         }
     }
@@ -455,7 +474,11 @@ private fun TimelineDay(b: ExplorerBody, date: LocalDate, today: LocalDate, file
             Box(Modifier.offset(y = 8.dp).size(9.dp).clip(CircleShape).background(palette.accent.toComposeColor()))
         }
         LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.weight(1f)) {
-            items(files.sortedByDescending { b.view.timelineTime(it) }, key = { it.documentUri }) { TimelineCard(b, it, card) }
+            items(files.sortedByDescending { b.view.timelineTime(it) }, key = { it.documentUri }) { entry ->
+                Box(Modifier.animateItem(fadeInSpec = materialItemFadeSpec, placementSpec = materialItemPlacementSpec, fadeOutSpec = materialItemFadeSpec)) {
+                    TimelineCard(b, entry, card)
+                }
+            }
         }
     }
 }

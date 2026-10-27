@@ -584,7 +584,15 @@ class ShapeItem(
         when {
             isFree -> refit(FreePath.map(FreePath.place(path.orEmpty(), b)) { t.apply(toPage(it)) }, uprightTurn(ux, mirrors))
             square -> {
-                val (turn, across) = if (mirrors) Flip.across(t, rotation) else atan2(uy.y, uy.x) - PI / 2.0 to Flip.NONE
+                // A projection can erase either frame axis. Read the turn from the surviving
+                // one: atan2(0, 0) would otherwise rotate a horizontal projection by 90 degrees.
+                val (turn, across) = when {
+                    ux.length() <= 1e-12 && uy.length() <= 1e-12 -> 0.0 to Flip.NONE
+                    uy.length() <= 1e-12 -> atan2(ux.y, ux.x) to Flip.NONE
+                    ux.length() <= 1e-12 -> atan2(uy.y, uy.x) - PI / 2.0 to Flip.NONE
+                    mirrors -> Flip.across(t, rotation)
+                    else -> atan2(uy.y, uy.x) - PI / 2.0 to Flip.NONE
+                }
                 // A kind symmetric along that axis looks the same either way, so it carries no flip.
                 flip = flip.toggled(across.and(shape.flips))
                 setFrame(t.apply(b.center), ux.length() * b.w, uy.length() * b.h, turn)

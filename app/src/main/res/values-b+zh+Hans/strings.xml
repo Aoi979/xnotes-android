@@ -260,6 +260,8 @@
     <string name="caption_cells">格数</string>
     <string name="count_fewer">减少</string>
     <string name="count_more">增加</string>
+    <string name="decrease_value">降低%1$s</string>
+    <string name="increase_value">提高%1$s</string>
     <string name="caption_fill">填充</string>
     <string name="caption_perfect">规整</string>
     <string name="caption_opacity">不透明度</string>
@@ -382,6 +384,9 @@
     <string name="new_canvas_menu">新建画布</string>
     <string name="import_pdf">导入 PDF</string>
     <string name="create_new">新建</string>
+    <string name="close_create_menu">关闭新建菜单</string>
+    <string name="create_menu_expanded">菜单已展开</string>
+    <string name="create_menu_collapsed">菜单已收起</string>
     <string name="choose_folder_hint">选择一个用于保存和浏览笔记的文件夹。</string>
     <string name="choose_folder">选择文件夹</string>
     <string name="use_app_storage">使用应用存储</string>
@@ -421,6 +426,7 @@
     <string name="export_pdf_action">导出 PDF</string>
     <string name="sort_descending">降序</string>
     <string name="sort_ascending">升序</string>
+    <string name="toggle_sort_order">切换排序顺序</string>
     <string name="folder">文件夹</string>
     <string name="err_paste_some">无法在此处粘贴部分项目。</string>
     <string name="err_move_some">无法移动部分项目。</string>
@@ -611,6 +617,7 @@
 
     <!-- About -->
     <string name="app_tagline">Android 手写笔记与素描应用</string>
+    <string name="unofficial_build">非官方修改版 · 基于 XNotes 上游开源项目</string>
     <string name="copy_version">复制版本号</string>
     <string name="help_make_better">帮助改进 xnotes</string>
     <string name="report_bug">报告问题</string>
@@ -642,6 +649,27 @@
     <string name="colour">颜色</string>
     <string name="auto">自动</string>
     <string name="margins_mm">页边距（毫米）</string>
+    <string name="text_input_behavior">输入行为</string>
+    <string name="markdown_shortcuts">Markdown 快捷键</string>
+    <string name="slash_commands">斜杠命令</string>
+    <string name="equation">公式</string>
+    <string name="select_latex_first">请先选择要设为公式的 LaTeX</string>
+    <string name="math_structures">线性代数</string>
+    <string name="math_matrix_2x2">2 × 2 矩阵</string>
+    <string name="math_custom_matrix">自定义矩阵…</string>
+    <string name="math_column_vector">列向量</string>
+    <string name="math_row_vector">行向量</string>
+    <string name="math_augmented_matrix">增广矩阵</string>
+    <string name="math_determinant">行列式</string>
+    <string name="math_inverse">矩阵逆</string>
+    <string name="math_transpose">转置</string>
+    <string name="math_rank">矩阵秩</string>
+    <string name="math_matrix_vector_equation">矩阵向量方程</string>
+    <string name="math_custom_matrix_title">插入矩阵</string>
+    <string name="math_brackets">括号样式</string>
+    <string name="math_fence_square">方括号</string>
+    <string name="math_fence_round">圆括号</string>
+    <string name="math_fence_determinant">行列式竖线</string>
     <string name="done">完成</string>
     <string name="text_colour">文字颜色</string>
     <string name="remove_highlight">移除高亮</string>
@@ -684,6 +712,7 @@
 
     <!-- Colour picker -->
     <string name="swatches">色板</string>
+    <string name="edit_saved_swatch">编辑此色板</string>
     <string name="spectrum">光谱</string>
     <string name="caption_recent">最近使用</string>
 
@@ -892,4 +921,144 @@
     <string name="pref_show_folder_counts">在文件夹上显示项目数</string>
     <string name="pref_show_extensions">显示文件扩展名（.xnote、.xcanvas）</string>
     <string name="pref_dates">日期</string>
+    <string name="canvas_math_tools">线性代数</string>
+    <string name="canvas_math_intro">放置书写框架或示意图，然后直接用笔书写、推导。</string>
+    <string name="canvas_math_frame">矩阵框架</string>
+    <string name="canvas_math_vectors">向量</string>
+    <string name="canvas_math_map">线性映射</string>
+    <string name="canvas_math_guides">单元格辅助线</string>
+    <string name="canvas_math_augmented">分隔最后一列（增广矩阵）</string>
+    <string name="canvas_math_plane_only">空白坐标平面</string>
+    <string name="canvas_math_sum">显示向量和</string>
+    <string name="canvas_math_grid">网格</string>
+    <string name="canvas_math_draw_vector">用笔绘制向量</string>
+    <string name="canvas_math_vector_u">向量 u</string>
+    <string name="canvas_math_vector_v">向量 v</string>
+    <string name="canvas_math_native_hint">插入后可整体移动、缩放，再切换到笔书写。选中后的“更多 → 锁定”可保护辅助线，避免被擦除。</string>
+    <string name="canvas_math_preview">线性代数预览</string>
+    <string name="canvas_math_input_error">请输入 −20 到 20 之间的有限数值。</string>
+    <string name="canvas_linear_transform">线性变换</string>
+    <string name="canvas_math_transform_hint">将矩阵 A 应用于选中的笔迹和图形。纵轴向上为正，笔画粗细保持不变。</string>
+    <string name="canvas_math_transform_legend">浅色：原图 · 实色：变换后 · 十字：原点</string>
+    <string name="canvas_math_origin">原点</string>
+    <string name="canvas_math_bottom_left">选区左下角</string>
+    <string name="canvas_math_center">选区中心</string>
+    <string name="canvas_math_keep_original">保留原图</string>
+    <string name="canvas_math_apply">应用</string>
+    <string name="canvas_math_singular">这个矩阵会将平面压缩成直线或点。</string>
+    <string name="canvas_math_identity">恒等</string>
+    <string name="canvas_math_rotate">旋转 90°</string>
+    <string name="canvas_math_shear">错切</string>
+    <string name="canvas_math_reflect">反射</string>
+    <string name="canvas_math_project">投影</string>
+    <string name="canvas_math_select_hint">变换手写内容：用套索选中笔迹，再点“更多 → 线性变换”。</string>
+    <string name="canvas_math_ink_only">请仅选中笔迹和图形。</string>
+
+    <!-- CuTe Canvas workbench -->
+    <string name="cute_title">CuTe Layout</string>
+    <string name="cute_subtitle">布局运算 · 线程与数据映射</string>
+    <string name="cute_edit">编辑 CuTe 布局</string>
+    <string name="cute_examples">示例</string>
+    <string name="cute_insert">插入画布</string>
+    <string name="cute_insert_copy_set">同时插入 S、D（左右排列）</string>
+    <string name="cute_insert_mma_set">同时插入 A、B、C（GEMM 排列）</string>
+    <string name="cute_update">更新图示</string>
+    <string name="cute_copy_cpp">复制 C++</string>
+    <string name="cute_copied">已复制</string>
+    <string name="cute_save_error">未能保存图示，请重试。</string>
+    <string name="cute_syntax_hint">可嵌套 Shape:Stride，例如 (8,8):(1,8)，也接受 _8 这样的静态整数写法。</string>
+    <string name="cute_cotarget">Cotarget 范围（可留空）</string>
+    <string name="cute_profile">Profile（可留空），例如 (1,1)</string>
+    <string name="cute_operand_b">B · Layout 或 tile(4,2)</string>
+    <string name="cute_offsets">偏移布局</string>
+    <string name="cute_tv_hint">T/V 编号始终按各 Shape 模式的 LayoutLeft 展平，与 Stride 无关。CuTe 输出 Tile 使用 m + M·n；另一个解码选项只改变输出坐标，不改变 T/V 编号。</string>
+    <string name="cute_result">结果 R</string>
+    <string name="cute_input">输入 A</string>
+    <string name="cute_use_result">用 R 继续运算</string>
+    <string name="cute_mapping_gaps">%1$d 个重复偏移 · %2$d 个空缺地址。点击格子可查看归属。</string>
+    <string name="cute_grouped_axes">此布局的 rank &gt; 2：模式 0 向下，其余模式合并显示在横轴；上方保留完整嵌套结构。</string>
+    <string name="cute_window">行 %1$d–%2$d · 列 %3$d–%4$d。插入时保存当前窗口和完整可编辑参数。</string>
+    <string name="cute_reedit_hint">插入后可手写批注。选中图示，再点顶栏 CuTe 按钮即可重新编辑，也可通过「更多 → 编辑 CuTe 布局」打开。</string>
+    <string name="cute_grid_accessibility">CuTe 布局，%1$d 行 %2$d 列。点击查看格子映射，可双指缩放。</string>
+    <string name="cute_gestures">点击追踪 · 拖动与双指缩放</string>
+    <string name="cute_fit">适应</string>
+    <string name="cute_unmapped">没有线程或数据映射到此格。</string>
+    <string name="cute_help">输入说明与支持范围</string>
+    <string name="cute_help_body">所有输入按静态整数处理。A 接受嵌套 Shape:Stride，也可只填 Shape，自动使用紧凑列优先 Stride。B 接受 Layout、整数或逐模式 tile，例如 tile(4,2)、tile(4:2,2:1)；B 中的 (4,2) 表示逐模式 tile。coalesce 可选填 tuple profile。complement 留空 cotarget 时保留末尾大小为 1 的模式。\n\n最多 65,536 个定义域元素；Shape 为正整数，Stride 为非负整数。图示每个窗口最多 32×32 格。当前不含动态类型、基向量 Stride、Swizzle 或 GPU 执行。\n\nTV 使用 NVIDIA print_latex_tv 的颜色和方向。颜色每 8 个线程循环，T 标签才是线程编号。重叠映射显示第一个归属和 +，点击可查看归属列表。\n\n参考版本：CUTLASS dc45f979ae33。</string>
+    <string name="cute_op_layout">Shape 与 Stride 定义坐标到整数偏移的映射。</string>
+    <string name="cute_op_coalesce">合并可连续的模式、移除大小为 1 的模式，保持定义域内的偏移不变。</string>
+    <string name="cute_op_filter">去除广播（Stride 为 0）和大小为 1 的模式，再做 coalesce。</string>
+    <string name="cute_op_composition">R(c) = A(B(c))。点击结果格子可追踪映射过程。</string>
+    <string name="cute_op_complement">构造 A 所留空隙及重复位置的有序布局，可用 cotarget 指定覆盖范围。</string>
+    <string name="cute_op_right_inverse">在可连续求逆的范围内满足 A(R(i)) = i。</string>
+    <string name="cute_op_left_inverse">对单射布局满足 R(A(i)) = i；广播布局得到准逆映射。</string>
+    <string name="cute_op_divide">把 A 分成 tile 与 rest：A ∘ (B, complement(B, size(A)))。tile(...) 会逐模式划分。</string>
+    <string name="cute_op_product">按 B 的布局重复 A：(A, complement(A) ∘ B)。</string>
+    <string name="cute_op_zipped">先执行 logical 运算，再把 tile 模式归为一组，rest 或重复模式归为另一组。</string>
+    <string name="cute_op_tiled">先执行 logical 运算；tile 保持分组，rest 或重复模式展开到顶层。</string>
+    <string name="cute_op_flat">先执行 logical 运算，再把 tile 和 rest 或重复组各展开一层。</string>
+    <string name="cute_op_blocked">按 B 的顺序分块重复 A，并配对 A、B 对应模式；两边均输入 Layout。</string>
+    <string name="cute_op_raked">让 A 与 B 交错排列，模式配对顺序与 blocked_product 相反。</string>
+    <string name="cute_error_syntax">请检查语法：Shape:Stride 或 tile(...)，括号必须配对。</string>
+    <string name="cute_error_congruence">Shape 与 Stride 的嵌套 tuple 结构必须完全一致。</string>
+    <string name="cute_error_integer">Shape 须为正整数；Stride 须为 0 至 1,000,000,000 的整数。</string>
+    <string name="cute_error_limit">输入超出支持范围：最多 65,536 个元素、8 层嵌套、64 个叶模式，每个操作数最多 2,048 字符。</string>
+    <string name="cute_error_tiler">tile profile 与布局 rank 不匹配，请检查模式数量和嵌套关系。</string>
+    <string name="cute_error_complement">此 Stride 结构无法构造所需的 CuTe complement，请检查模式是否重叠。</string>
+    <string name="cute_error_divisibility">输入不满足 CuTe 的 Shape 或 Stride 整除条件，无法得到支持的 Layout 结果。</string>
+    <string name="cute_error_tv_rank">TV 视图要求恰好两个顶层模式：(Thread, Value)。请选择偏移布局，或使用 rank 为 2 的结果。</string>
+    <string name="cute_error_tile_size">M、N 须为正整数，且 M×N ≤ 65,536。</string>
+    <string name="cute_error_tv_outside">存在超出 M×N 平面的偏移，请增大平面或检查布局。</string>
+    <string name="cute_error_generic">无法计算此输入，请检查布局和运算参数。</string>
+
+    <!-- CuTe hardware workbench -->
+    <string name="cute_major_hint">为整个嵌套 Shape 构造 Stride：LayoutLeft 让首个叶模式连续，LayoutRight 让末个叶模式连续。T/V 编号始终保持 LayoutLeft；这两个按钮不是 T/V 编号方式的开关。</string>
+    <string name="cute_use_base">以基础 R 作为 A</string>
+    <string name="cute_swizzle_hint">对结果的元素偏移叠加 XOR Swizzle：Swizzle ∘ offset ∘ R。上方代数运算作用于基础布局。</string>
+    <string name="cute_mma_hint">AtomLayoutMNK 指定 M/N/K 上的 Atom 排布；PermutationMNK 支持 _、整数 Tile 大小或稠密 Layout。A=(M,K)，B=(N,K)，C=(M,N)。</string>
+    <string name="cute_copy_source">布局构造</string>
+    <string name="cute_atom_elements">Atom 特征提取自原生 CuTe；偏移单位为 Copy_Atom 所用类型的元素。</string>
+    <string name="cute_copy_hint">线程布局与值布局通过 raked_product 组合；T/V 大小必须是 Atom 参考布局对应大小的整数倍。</string>
+    <string name="cute_copy_sides">S：源端，D：目标端，R：Atom 参考端。重复所有者可能表示广播或提供地址的线程。</string>
+    <string name="cute_descriptor_hint">该 GMMA 操作数使用共享内存描述符。此图展示逻辑坐标，不推断寄存器归属或实际共享内存排布。</string>
+    <string name="cute_partition_title">Tile 分配：%1$d 个线程，每线程 %2$d 个值。选择线程可高亮其片段。</string>
+    <string name="cute_all_threads">所有线程</string>
+    <string name="cute_thread_range">线程编号超出当前布局范围。</string>
+    <string name="cute_tma_scope">Tiled TMA：1–5 维、interleave NONE、1/2/4/8 字节元素。第 0 维连续，其 elementStride 被忽略。提供布局分析，不执行 GPU 指令或生成不透明描述符。</string>
+    <string name="cute_tma_strides">GMEM 外层步长（字节）</string>
+    <string name="cute_tma_origin">Tile 起点坐标</string>
+    <string name="cute_tma_element">元素大小（字节）</string>
+    <string name="cute_tma_analysis">SMEM 行跨度 %1$d B · 分配空间 %2$d B · 数据量 %3$d B。单元格显示字节偏移及起始 4 字节 bank；颜色本身不代表冲突程度。</string>
+    <string name="cute_error_swizzle">Swizzle 要求 B=0…10、M≥0、|S|≥B、M+|S|+B≤30，offset 在 [0,2³⁰) 内。</string>
+    <string name="cute_error_hardware_layout">线程/置换布局须稠密且不重叠。MNK 最多 3 个模式；Tile 各维大小须能被 Atom 大小 × 排布数量整除。</string>
+    <string name="cute_error_copy_atom">TiledCopy 的线程数/值数须为所选 Atom 参考大小的整数倍。请调整 T/V 布局或 MMA 操作数。</string>
+    <string name="cute_error_tma_shape">TMA 参数需匹配的 1–5 维：globalDim 为 1…2³²，boxDim 为 1…256，elementStrides 为 1…8，起点为 32 位有符号整数，元素为 1/2/4/8 字节。图示上限 65,536 个元素。</string>
+    <string name="cute_error_tma_alignment">GMEM 起点须按 16 B 对齐（启用 Swizzle 时 128 B）；SMEM 起点须按 128 B 对齐并在 [0,2³⁰] 内。</string>
+    <string name="cute_error_tma_swizzle">Box 最内层字节数须为 16 的倍数，且不超过启用的 32/64/128 B Swizzle 宽度。</string>
+    <string name="cute_error_tma_strides">需提供 rank−1 个字节步长；每个须为正的 16 倍数、小于 2⁴⁰，且能容纳前一维。</string>
+    <string name="cute_retile_hint">把参考片段 (V,M,N,…) 重排为 Copy Atom 的值分组。retile_S 与 retile_D 使用相同的参考映射，不移动数据。</string>
+    <string name="cute_output_decode">输出偏移 → Tile 坐标</string>
+    <string name="cute_domain_index">定义域编号 i=%1$d（TV 中为 T + 线程数 × V，与内存偏移分别计算）</string>
+    <string name="cute_workspace_label">工作区</string>
+    <string name="cute_workspace_algebra">布局代数</string>
+    <string name="cute_workspace_mma">Tiled MMA</string>
+    <string name="cute_workspace_copy">Tiled Copy</string>
+    <string name="cute_workspace_tma">TMA 传输</string>
+    <string name="cute_inputs_title">布局输入</string>
+    <string name="cute_stride_shortcuts">Stride 构造快捷方式</string>
+    <string name="cute_operation_title">运算</string>
+    <string name="cute_view_title">映射视图</string>
+    <string name="cute_tv_layout">TV 布局</string>
+    <string name="cute_calculation_title">计算过程</string>
+    <string name="cute_step_input">输入布局</string>
+    <string name="cute_step_operation">执行运算</string>
+    <string name="cute_step_result">结果布局</string>
+    <string name="cute_step_offset_mapping">元素地址映射</string>
+    <string name="cute_metric_size">Size</string>
+    <string name="cute_metric_cosize">Cosize</string>
+    <string name="cute_metric_rank">Rank</string>
+    <string name="cute_metric_depth">Depth</string>
+    <string name="cute_show_details">展开计算细节</string>
+    <string name="cute_hide_details">收起计算细节</string>
+    <string name="cute_cell_trace_title">选中单元格的映射过程</string>
 </resources>

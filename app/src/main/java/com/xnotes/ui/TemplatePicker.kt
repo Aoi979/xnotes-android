@@ -18,8 +18,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -39,6 +39,9 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -67,8 +70,8 @@ internal object TemplateLibraryUi {
     var version by mutableIntStateOf(0)
 }
 
-private val THUMB_W = 52.dp
-private val TILE_W = 62.dp
+private val THUMB_W = 56.dp
+private val TILE_W = 68.dp
 
 /**
  * A row of template previews drawn at the current page's proportions, the [selected] one outlined,
@@ -94,14 +97,17 @@ internal fun TemplateStrip(
     val thumbH = THUMB_W * aspect.toFloat()
     val wPx = thumbPx(THUMB_W)
     // Not a LazyRow: the popup measures its content's intrinsic size, which lazy lists refuse.
-    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    Row(Modifier.horizontalScroll(rememberScrollState()).selectableGroup(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         for (e in entries) key(e.key) {
             var menu by remember { mutableStateOf(false) }
+            val sel = e.key == selected
             Column(
                 Modifier
                     .width(TILE_W)
                     .clip(MaterialTheme.shapes.extraSmall)
+                    .semantics { this.selected = sel }
                     .combinedClickable(
+                        role = Role.RadioButton,
                         onClick = { onSelect(e.key) },
                         onLongClick = {
                             if (e.source == TemplateLibrary.Source.IMPORTED || e.source == TemplateLibrary.Source.NOTE) menu = true
@@ -110,7 +116,6 @@ internal fun TemplateStrip(
                     .padding(vertical = 3.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                val sel = e.key == selected
                 Box(
                     Modifier
                         .size(THUMB_W, thumbH)
@@ -118,13 +123,13 @@ internal fun TemplateStrip(
                         .padding(if (sel) 2.dp else 1.dp),
                 ) {
                     val bmp = rememberTemplateThumb(e.template, TemplateThumbs.spec(e.key, pageMm, ink, accent, paper, TemplateValues.DEFAULTS, wPx), keep = true)
-                    if (bmp != null) Image(bmp, contentDescription = e.template.name, Modifier.size(THUMB_W, thumbH))
+                    if (bmp != null) Image(bmp, contentDescription = null, Modifier.size(THUMB_W, thumbH))
                 }
                 Spacer(Modifier.height(3.dp))
                 Text(
                     e.template.name,
-                    color = palette.text.toComposeColor(),
-                    fontSize = 9.sp,
+                    color = (if (sel) palette.accent else palette.text).toComposeColor(),
+                    style = MaterialTheme.typography.labelSmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     textAlign = TextAlign.Center,
@@ -142,7 +147,7 @@ internal fun TemplateStrip(
             Modifier
                 .width(TILE_W)
                 .clip(MaterialTheme.shapes.extraSmall)
-                .combinedClickable(onClick = onImport)
+                .combinedClickable(role = Role.Button, onClick = onImport)
                 .padding(vertical = 3.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -159,7 +164,7 @@ internal fun TemplateStrip(
             Text(
                 stringResource(R.string.import_template),
                 color = palette.text.toComposeColor(),
-                fontSize = 9.sp,
+                style = MaterialTheme.typography.labelSmall,
                 maxLines = 1,
             )
         }

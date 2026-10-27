@@ -3,12 +3,12 @@ package com.xnotes.ui
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -39,8 +39,11 @@ import androidx.compose.material.icons.outlined.CheckBox
 import androidx.compose.material.icons.outlined.TableChart
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.IconToggleButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -53,7 +56,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -80,9 +85,10 @@ import kotlin.math.roundToInt
  * adjustResize window floats it directly above the soft keyboard. Controls, in
  * order: checkbox item, font colour, highlight, font face, size, bold/italic/
  * underline/strikethrough, heading level, ordered and unordered lists, code block
- * (tap toggles, long-press picks the language), table, alignment (cycles), indent,
- * outdent. Inside a table cell the heading, list, code, table and indent controls
- * disable. Centred when it fits, scrollable when it does not.
+ * (tap toggles, long-press picks the language), equation and linear algebra
+ * structures, table, alignment (cycles), indent, outdent. Inside a table cell the
+ * heading, list, code, table and indent controls disable. Centred when it fits,
+ * scrollable when it does not.
  */
 @Composable
 fun TextFormatBar(editor: Editor) {
@@ -106,7 +112,7 @@ fun TextFormatBar(editor: Editor) {
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            BarIcon(Icons.Outlined.CheckBox, stringResource(R.string.checkbox_item), active = para?.list == ListKind.CHECK, enabled = !inCell) {
+            BarIcon(Icons.Outlined.CheckBox, stringResource(R.string.checkbox_item), active = para?.list == ListKind.CHECK, toggleable = true, enabled = !inCell) {
                 editor.flowToggleList(ListKind.CHECK)
             }
             BarDivider()
@@ -116,22 +122,23 @@ fun TextFormatBar(editor: Editor) {
             FontFaceButton(editor, style.face)
             SizeStepper(editor.flowShownSizePt()) { editor.flowAdjustSize(it) }
             BarDivider()
-            BarIcon(Icons.Filled.FormatBold, stringResource(R.string.bold), active = style.bold, shortcut = Keys.BOLD) { editor.flowToggleBold() }
-            BarIcon(Icons.Filled.FormatItalic, stringResource(R.string.italic), active = style.italic, shortcut = Keys.ITALIC) { editor.flowToggleItalic() }
-            BarIcon(Icons.Filled.FormatUnderlined, stringResource(R.string.underline), active = style.underline, shortcut = Keys.UNDERLINE) { editor.flowToggleUnderline() }
-            BarIcon(Icons.Filled.FormatStrikethrough, stringResource(R.string.strikethrough), active = style.strike, shortcut = Keys.STRIKE) { editor.flowToggleStrike() }
+            BarIcon(Icons.Filled.FormatBold, stringResource(R.string.bold), active = style.bold, toggleable = true, shortcut = Keys.BOLD) { editor.flowToggleBold() }
+            BarIcon(Icons.Filled.FormatItalic, stringResource(R.string.italic), active = style.italic, toggleable = true, shortcut = Keys.ITALIC) { editor.flowToggleItalic() }
+            BarIcon(Icons.Filled.FormatUnderlined, stringResource(R.string.underline), active = style.underline, toggleable = true, shortcut = Keys.UNDERLINE) { editor.flowToggleUnderline() }
+            BarIcon(Icons.Filled.FormatStrikethrough, stringResource(R.string.strikethrough), active = style.strike, toggleable = true, shortcut = Keys.STRIKE) { editor.flowToggleStrike() }
             BarDivider()
             HeadingButton(editor, para?.headingLevel ?: 0, enabled = !inCell)
-            BarIcon(Icons.Filled.FormatListNumbered, stringResource(R.string.ordered_list), active = para?.list == ListKind.ORDERED, enabled = !inCell) {
+            BarIcon(Icons.Filled.FormatListNumbered, stringResource(R.string.ordered_list), active = para?.list == ListKind.ORDERED, toggleable = true, enabled = !inCell) {
                 editor.flowToggleList(ListKind.ORDERED)
             }
-            BarIcon(Icons.AutoMirrored.Filled.FormatListBulleted, stringResource(R.string.bullet_list), active = para?.list == ListKind.BULLET, enabled = !inCell) {
+            BarIcon(Icons.AutoMirrored.Filled.FormatListBulleted, stringResource(R.string.bullet_list), active = para?.list == ListKind.BULLET, toggleable = true, enabled = !inCell) {
                 editor.flowToggleList(ListKind.BULLET)
             }
             CodeBlockButton(editor, para?.codeLang, enabled = !inCell)
-            BarIcon(Icons.Filled.Functions, stringResource(R.string.equation), active = style.math, enabled = editor.flowEditingActive) {
+            BarIcon(Icons.Filled.Functions, stringResource(R.string.equation), active = style.math, toggleable = true, enabled = editor.flowEditingActive) {
                 editor.flowToggleMath()
             }
+            MathStructuresButton(editor)
             BarIcon(Icons.Outlined.TableChart, stringResource(R.string.insert_table), enabled = editor.flowEditingActive && !inCell) {
                 tableDialog = true
             }
@@ -182,13 +189,10 @@ private fun HeadingButton(editor: Editor, level: Int, enabled: Boolean) {
     val label = stringResource(R.string.heading)
     Box {
         Tooltip(label) {
-            Box(
-                Modifier
-                    .size(44.dp)
-                    .clip(CircleShape)
-                    .clickable(enabled = enabled) { menuOpen = true }
-                    .semantics { contentDescription = label },
-                contentAlignment = Alignment.Center,
+            IconButton(
+                onClick = { menuOpen = true },
+                enabled = enabled,
+                modifier = Modifier.size(44.dp).semantics { contentDescription = label },
             ) {
                 val tint = when {
                     !enabled -> palette.disabled
@@ -204,9 +208,16 @@ private fun HeadingButton(editor: Editor, level: Int, enabled: Boolean) {
             }
         }
         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            val count = Paragraph.MAX_HEADING + 1
             for (n in 0..Paragraph.MAX_HEADING) {
                 ChoiceMenuItem(
-                    n == level,
+                    selected = n == level,
+                    shapeIndex = n,
+                    shapeCount = count,
+                    onClick = {
+                        editor.flowSetHeading(n)
+                        menuOpen = false
+                    },
                     text = { fg ->
                         Text(
                             if (n == 0) stringResource(R.string.body_text) else stringResource(R.string.heading_n, n),
@@ -226,10 +237,6 @@ private fun HeadingButton(editor: Editor, level: Int, enabled: Boolean) {
                     } else {
                         null
                     },
-                    onClick = {
-                        editor.flowSetHeading(n)
-                        menuOpen = false
-                    },
                 )
             }
         }
@@ -243,14 +250,22 @@ private fun HeadingButton(editor: Editor, level: Int, enabled: Boolean) {
 private fun CodeBlockButton(editor: Editor, lang: String?, enabled: Boolean) {
     val palette = LocalPalette.current
     var menuOpen by remember { mutableStateOf(false) }
+    val label = stringResource(R.string.code_block)
+    val active = lang != null
     Box {
-        Tooltip(stringResource(R.string.code_block), hint = stringResource(R.string.tip_hold_for_language)) {
+        Tooltip(label, hint = stringResource(R.string.tip_hold_for_language)) {
             Box(
                 Modifier
                     .size(44.dp)
                     .clip(CircleShape)
+                    .background(if (active) palette.selectionBackground.toComposeColor() else Color.Transparent)
+                    .semantics {
+                        contentDescription = label
+                        selected = active
+                    }
                     .combinedClickable(
                         enabled = enabled,
+                        role = Role.Button,
                         onClick = { editor.flowToggleCode() },
                         onLongClick = { menuOpen = true },
                     ),
@@ -259,14 +274,14 @@ private fun CodeBlockButton(editor: Editor, lang: String?, enabled: Boolean) {
                 if (lang != null) {
                     Text(
                         shortLangLabel(lang),
-                        color = palette.accent.toComposeColor(),
+                        color = palette.selectionForeground.toComposeColor(),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold,
                     )
                 } else {
                     Icon(
                         Icons.Filled.Code,
-                        contentDescription = stringResource(R.string.code_block),
+                        contentDescription = null,
                         tint = if (enabled) palette.textDim.toComposeColor() else palette.disabled.toComposeColor(),
                         modifier = Modifier.size(22.dp),
                     )
@@ -279,19 +294,22 @@ private fun CodeBlockButton(editor: Editor, lang: String?, enabled: Boolean) {
                 lang.isEmpty() -> "plain"
                 else -> lang
             }
-            for (token in editor.codeLanguageChoices()) {
+            val languages = editor.codeLanguageChoices()
+            languages.forEachIndexed { index, token ->
                 ChoiceMenuItem(
-                    token == current,
+                    selected = token == current,
+                    shapeIndex = index,
+                    shapeCount = languages.size,
+                    onClick = {
+                        editor.flowSetCodeLanguage(token)
+                        menuOpen = false
+                    },
                     text = { fg ->
                         Text(
                             if (token == "plain") stringResource(R.string.code_plain) else token,
                             color = fg,
                             fontSize = 14.sp,
                         )
-                    },
-                    onClick = {
-                        editor.flowSetCodeLanguage(token)
-                        menuOpen = false
                     },
                 )
             }
@@ -304,6 +322,7 @@ private fun BarIcon(
     icon: ImageVector,
     contentDescription: String,
     active: Boolean = false,
+    toggleable: Boolean = false,
     enabled: Boolean = true,
     shortcut: String? = null,
     onClick: () -> Unit,
@@ -315,8 +334,24 @@ private fun BarIcon(
         else -> palette.textDim.toComposeColor()
     }
     Tooltip(contentDescription, shortcut = shortcut) {
-        IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(44.dp)) {
-            Icon(icon, contentDescription = contentDescription, tint = tint, modifier = Modifier.size(22.dp))
+        if (toggleable) {
+            IconToggleButton(
+                checked = active,
+                onCheckedChange = { onClick() },
+                enabled = enabled,
+                modifier = Modifier.size(44.dp),
+                colors = IconButtonDefaults.iconToggleButtonColors(
+                    contentColor = palette.textDim.toComposeColor(),
+                    checkedContainerColor = palette.selectionBackground.toComposeColor(),
+                    checkedContentColor = palette.selectionForeground.toComposeColor(),
+                ),
+            ) {
+                Icon(icon, contentDescription = contentDescription, modifier = Modifier.size(22.dp))
+            }
+        } else {
+            IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(44.dp)) {
+                Icon(icon, contentDescription = contentDescription, tint = tint, modifier = Modifier.size(22.dp))
+            }
         }
     }
 }
@@ -337,12 +372,13 @@ private fun BarDivider() {
 private fun FontColorButton(editor: Editor, current: Rgba?) {
     val palette = LocalPalette.current
     var open by remember { mutableStateOf(false) }
+    val label = stringResource(R.string.text_colour)
     val shown = current ?: editor.flowDefaultColor()
     Box {
         Tooltip(stringResource(R.string.text_colour)) {
-            Box(
-                Modifier.size(44.dp).clip(CircleShape).clickable { open = true },
-                contentAlignment = Alignment.Center,
+            IconButton(
+                onClick = { open = true },
+                modifier = Modifier.size(44.dp).semantics { contentDescription = label },
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
@@ -377,14 +413,12 @@ private fun FontColorButton(editor: Editor, current: Rgba?) {
 private fun HighlightButton(editor: Editor, current: Rgba?) {
     val palette = LocalPalette.current
     var open by remember { mutableStateOf(false) }
+    val label = stringResource(if (current != null) R.string.remove_highlight else R.string.markup_highlight)
     Box {
-        Tooltip(stringResource(if (current != null) R.string.remove_highlight else R.string.markup_highlight)) {
-            Box(
-                Modifier
-                    .size(44.dp)
-                    .clip(CircleShape)
-                    .clickable { if (current != null) editor.flowSetCharHighlight(null) else open = true },
-                contentAlignment = Alignment.Center,
+        Tooltip(label) {
+            IconButton(
+                onClick = { if (current != null) editor.flowSetCharHighlight(null) else open = true },
+                modifier = Modifier.size(44.dp).semantics { contentDescription = label },
             ) {
                 Box(
                     Modifier
@@ -427,22 +461,18 @@ private fun FontFaceButton(editor: Editor, current: FontFace?) {
     val shown = current ?: editor.flowDefaultFace()
     Box {
         Tooltip(stringResource(R.string.font)) {
-            Row(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .clip(MaterialTheme.shapes.small)
-                    .clickable { open = true }
-                    .padding(horizontal = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    fontLabel(shown),
-                    color = palette.text.toComposeColor(),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.widthIn(max = 120.dp),
-                    style = TextStyle(fontFamily = shown.toComposeFamily(), fontSize = 14.sp),
-                )
+            TextButton(onClick = { open = true }, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        fontLabel(shown),
+                        color = palette.text.toComposeColor(),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.widthIn(max = 120.dp),
+                        style = TextStyle(fontFamily = shown.toComposeFamily(), fontSize = 14.sp),
+                    )
+                    Icon(XnotesIcons.chevronDown, null, tint = palette.textDim.toComposeColor(), modifier = Modifier.size(14.dp))
+                }
             }
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
@@ -459,7 +489,7 @@ private fun SizeStepper(size: Double, onDelta: (Double) -> Unit) {
     val palette = LocalPalette.current
     Row(verticalAlignment = Alignment.CenterVertically) {
         Tooltip(stringResource(R.string.smaller)) {
-            Box(Modifier.size(36.dp).clip(CircleShape).clickable { onDelta(-1.0) }, contentAlignment = Alignment.Center) {
+            IconButton(onClick = { onDelta(-1.0) }, modifier = Modifier.size(36.dp)) {
                 Icon(XnotesIcons.minus, stringResource(R.string.smaller), tint = palette.textDim.toComposeColor(), modifier = Modifier.size(16.dp))
             }
         }
@@ -471,7 +501,7 @@ private fun SizeStepper(size: Double, onDelta: (Double) -> Unit) {
             modifier = Modifier.width(26.dp),
         )
         Tooltip(stringResource(R.string.larger)) {
-            Box(Modifier.size(36.dp).clip(CircleShape).clickable { onDelta(1.0) }, contentAlignment = Alignment.Center) {
+            IconButton(onClick = { onDelta(1.0) }, modifier = Modifier.size(36.dp)) {
                 Icon(XnotesIcons.plus, stringResource(R.string.larger), tint = palette.textDim.toComposeColor(), modifier = Modifier.size(16.dp))
             }
         }

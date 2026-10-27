@@ -91,6 +91,10 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
 
     val view = InfiniteCanvasView(appContext)
 
+    /** A SurfaceView starts black; keep it covered until its first real frame has been swapped. */
+    var contentReady by mutableStateOf(false)
+        private set
+
     /** The front buffer wet ink goes into, above [view] and transparent whenever no pen is down. */
     val pad = com.xnotes.gl.GlWetPad(appContext)
 
@@ -290,6 +294,8 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         view.genericMotion = { interaction.onGenericMotion(it) }
         view.hover = { interaction.onHover(it) }
         view.afterLayout = { applyInitialView() }
+        view.onSurfacePending = { contentReady = false }
+        view.onFirstFrameReady = { com.xnotes.platform.renderTrace("xnotes.canvas.firstFrameReady") { contentReady = true } }
         view.onContextReady = { renderFailure = view.failure }
         pad.onSurfaceLost = { endFrontInk(); settleHeld() }
         view.onFourFingerTap = { toggleDebug() }
@@ -297,7 +303,13 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         view.scene = scene
         // Decoding reads a file and can take tens of milliseconds, so it never runs on the render
         // thread; the finished bitmap is picked up and uploaded at the start of the next frame.
-        scene.decodeOn = { work -> decodeExecutor.execute(work) }
+        scene.decodeOn = { work ->
+            try {
+                decodeExecutor.execute(work)
+            } catch (e: java.util.concurrent.RejectedExecutionException) {
+                if (!decodeExecutor.isShutdown) throw e
+            }
+        }
         scene.onOutOfMemory = { short -> view.post { outOfMemory = short } }
         document.listener = modelListener
         // Whatever is added while this canvas records takes the recording's moment.
@@ -393,10 +405,12 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
 
     /** Re-tessellate the whole document, after a load or a wholesale list replacement. */
     private fun rebuildScene() {
-        scene.reset()
-        vectorMeshGen.clear()
-        scene.batch { for (item in document.items) pushItem(item) }
-        scene.setOrder(document.items)
+        com.xnotes.platform.renderTrace("xnotes.canvas.meshDocument") {
+            scene.reset()
+            vectorMeshGen.clear()
+            scene.batch { for (item in document.items) pushItem(item) }
+            scene.setOrder(document.items)
+        }
     }
 
     /** Repaint the canvas with whatever the model currently says. */
@@ -485,6 +499,188 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
 
     /** Only text needs a measurer to clone, and the canvas has none; this satisfies the signature. */
     private val textMeasurer = com.xnotes.platform.AndroidTextMeasurer()
+
+    var mathToolsOpen by mutableStateOf(false)
+    var linearTransformOpen by mutableStateOf(false)
+
+    var cuteToolsOpen by mutableStateOf(false)
+    var cuteDraft by mutableStateOf(com.xnotes.core.cute.CuteSpec())
+    var cuteEditTarget: ImageItem? = null
+        private set
+    private var cuteCachedPath: String? = null
+    private var cuteCachedSpec: com.xnotes.core.cute.CuteSpec? = null
+
+    fun openCuteTools() {
+        if (canEditCuteSelection()) {
+            editCuteSelection()
+            return
+        }
+        cuteEditTarget = null
+        cuteToolsOpen = true
+    }
+
+    private fun selectedCuteSpec(): com.xnotes.core.cute.CuteSpec? {
+        val image = selection.items.singleOrNull() as? ImageItem ?: return null
+        if (cuteCachedPath != image.image.file.path) {
+            cuteCachedPath = image.image.file.path
+            cuteCachedSpec = com.xnotes.core.cute.CuteDiagram.read(image.image.file)
+        }
+        return cuteCachedSpec
+    }
+
+    override fun canEditCuteSelection() = selectedCuteSpec() != null
+
+    override fun editCuteSelection() {
+        val spec = selectedCuteSpec() ?: return
+        cuteEditTarget = selection.items.singleOrNull() as? ImageItem ?: return
+        cuteDraft = spec
+        cuteToolsOpen = true
+    }
+
+    /** SVG source files are immutable: undo and clipboard copies keep the old parameters/image. */
+    fun placeCuteDiagram(evaluation: com.xnotes.core.cute.CuteEvaluation): Boolean {
+        val dir = imageDir ?: return false
+        val data = runCatching { writeCuteDiagram(com.xnotes.core.cute.CuteDiagram.render(evaluation), dir) }.getOrNull() ?: return false
+        val target = cuteEditTarget?.takeIf { document.containsRef(it) && !it.locked }
+        commitText()
+        val item: ImageItem
+        if (target != null) {
+            item = target
+            val beforeData = item.image
+            val beforeRect = item.rect
+            val height = beforeRect.w * data.height / data.width
+            val afterRect = Rect(beforeRect.left, beforeRect.centerY - height / 2, beforeRect.w, height)
+            val edit = object : Command {
+                override fun redo() { item.image = data; item.rect = afterRect; document.itemsChanged(listOf(item)) }
+                override fun undo() { item.image = beforeData; item.rect = beforeRect; document.itemsChanged(listOf(item)) }
+            }
+            edit.redo()
+            history.push(edit)
+        } else {
+            val visible = viewport.visibleContentRect()
+            val scale = minOf(visible.w * 0.78 / data.width, visible.h * 0.78 / data.height)
+            val center = viewport.centerContent
+            val w = data.width * scale; val h = data.height * scale
+            item = ImageItem(data, Rect(center.x - w / 2, center.y - h / 2, w, h))
+            commitItem(item)
+        }
+        armTool(Tool.SELECT)
+        selection.select(listOf(item))
+        markDirty(); refresh(); publishOverlay()
+        return true
+    }
+
+    /** A batch is one undo step; CPU layout/SVG generation and file writes stay off the UI thread. */
+    suspend fun placeCuteDiagramSet(spec: com.xnotes.core.cute.CuteSpec): Boolean {
+        val dir = imageDir ?: return false
+        val destination = document
+        val files = ArrayList<java.io.File>()
+        var committed = false
+        try {
+            val prepared = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                com.xnotes.core.cute.CuteDiagramSet.create(spec).map { placement ->
+                    placement to writeCuteDiagram(placement.asset, dir).also { files.add(it.file) }
+                }
+            }
+            if (document !== destination) return false
+            commitText()
+            val bounds = prepared.map { it.first.rect }.reduce(Rect::union)
+            val visible = viewport.visibleContentRect()
+            val scale = minOf(visible.w * 0.78 / bounds.w, visible.h * 0.78 / bounds.h)
+            val center = viewport.centerContent
+            val items = prepared.map { (placement, data) ->
+                val rect = placement.rect
+                ImageItem(data, Rect(center.x + (rect.x - bounds.centerX) * scale,
+                    center.y + (rect.y - bounds.centerY) * scale, rect.w * scale, rect.h * scale))
+            }
+            document.addAll(items)
+            committed = true
+            history.push(AddCanvasItems(document, items))
+            armTool(Tool.SELECT)
+            selection.select(items)
+            markDirty(); refresh(); publishOverlay()
+            return true
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            return false
+        } finally {
+            if (!committed) files.forEach { it.delete() }
+        }
+    }
+
+    private fun writeCuteDiagram(asset: com.xnotes.core.cute.CuteDiagramAsset, dir: java.io.File): ImageData {
+        val file = java.io.File.createTempFile("cute-", ".svg", dir)
+        try {
+            file.writeText(asset.svg)
+            return ImageData(file, asset.width, asset.height)
+        } catch (e: Exception) {
+            file.delete()
+            throw e
+        }
+    }
+
+    /** Place native geometry at a comfortable writing size, selected for immediate positioning. */
+    fun insertMathDiagram(diagram: com.xnotes.core.math.MathDiagram) {
+        commitText()
+        val items = diagram.materialize(textMeasurer)
+        if (items.isEmpty()) return
+        val bounds = items.map { it.bounds() }.reduce { a, b -> a.union(b) }
+        val visible = viewport.visibleContentRect()
+        val scale = minOf(visible.w * 0.68 / bounds.w.coerceAtLeast(1.0), visible.h * 0.58 / bounds.h.coerceAtLeast(1.0))
+        val centre = viewport.centerContent
+        val transform = com.xnotes.core.geometry.Affine(scale, 0.0, 0.0, scale, centre.x - bounds.centerX * scale, centre.y - bounds.centerY * scale)
+        val penScale = devicePxPerDp / viewport.zoom
+        items.forEach {
+            it.applyTransform(transform)
+            it.strokeWidth *= penScale
+            it.dashLength *= penScale
+            it.dashGap *= penScale
+        }
+        document.addAll(items)
+        history.push(AddCanvasItems(document, items))
+        armTool(Tool.SELECT)
+        selection.select(items)
+        markDirty()
+        refresh()
+        publishOverlay()
+    }
+
+    override val supportsLinearTransform: Boolean get() = true
+    override fun canLinearTransformSelection(): Boolean = com.xnotes.core.math.LinearInk.supports(selection.items)
+
+    fun armMathVector() {
+        val arrow = com.xnotes.core.shapes.ShapePresets.byKey("arrow") ?: return
+        updateShapeConfig(shapeConfig.choose(arrow).copy(headStart = com.xnotes.core.shapes.Head.NONE, headEnd = com.xnotes.core.shapes.Head.OPEN))
+        armTool(Tool.SHAPE)
+    }
+
+    override fun openLinearTransform() {
+        if (canLinearTransformSelection()) linearTransformOpen = true
+    }
+
+    /** Centre or bottom-left is the visible mathematical origin; the y axis points upward. */
+    fun transformSelectedInk(matrix: com.xnotes.core.math.Matrix2, bottomLeft: Boolean, keepOriginal: Boolean) {
+        if (!matrix.valid || !canLinearTransformSelection()) return
+        val original = selection.items.toList()
+        val bounds = original.map { it.bounds() }.reduce { a, b -> a.union(b) }
+        val origin = if (bottomLeft) Pt(bounds.left, bounds.bottom) else bounds.center
+        val items = if (keepOriginal) original.deepCopyAll(textMeasurer) else original
+        if (keepOriginal) {
+            com.xnotes.core.math.LinearInk.mapDetached(items, matrix, origin)
+            com.xnotes.core.audio.RecordingIds.adopt(items, document.items, moves = false)
+            document.addAll(items)
+            history.push(AddCanvasItems(document, items))
+        } else {
+            val edit = com.xnotes.core.math.LinearInk.apply(items, matrix, origin)
+            document.itemsChanged(items)
+            history.push(OnCanvas(document, edit, items))
+        }
+        selection.select(items)
+        markDirty()
+        refresh()
+        publishOverlay()
+    }
 
     /** Where the floating menu sits, or null while a gesture is running or nothing is selected. */
     override var selectionMenuRect: Rect? by mutableStateOf(null)
@@ -717,6 +913,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
 
     /** The shape or connector whose label is open in the overlay, and that label as it was before. */
     private var editingLabel: Labelled? = null
+    private var textEditSession = Any()
     private var labelBefore: ShapeLabel? = null
 
     /** Where the overlay sits while a label is open, or null. */
@@ -744,6 +941,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         commitText()
         interaction.clearSelection()
         editingLabel = shape
+        textEditSession = Any()
         labelBefore = shape.label
         val l = shape.label ?: ShapeLabel("", ShapeLabel.styleFor(shape, textPointSize, textFace), textMeasurer).also { shape.label = it }
         textFace = l.style.face
@@ -833,6 +1031,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
             text = l.text,
             rotation = Math.toDegrees(shape.labelTurn),
             centred = true,
+            sessionKey = textEditSession,
         )
         editingField = f
         textBar = com.xnotes.canvas.TextBar(f.screenBounds(), l.style.face, l.style.pointSize, editing = true)
@@ -2068,6 +2267,12 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         textBar = null
         document.listener = null
         document = next
+        mathToolsOpen = false
+        cuteToolsOpen = false
+        cuteEditTarget = null
+        cuteCachedPath = null
+        cuteCachedSpec = null
+        linearTransformOpen = false
         next.listener = modelListener
         selection = CanvasSelection(next)
         hasSelection = false
@@ -2080,6 +2285,18 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         applyInitialView()
         refresh()
         view.publish()
+    }
+
+    /** Called after the pane exits, or when its activity's composition is disposed. */
+    internal fun release() {
+        interaction.resetGestureState()
+        clearFading()
+        colorDropper.release()
+        document.listener = null
+        // GL teardown may still request a decode. Already captured callbacks tolerate shutdown;
+        // new requests are ignored, while decodes already queued finish and exit.
+        scene.decodeOn = {}
+        decodeExecutor.shutdown()
     }
 
     // --- view ---

@@ -19,6 +19,7 @@ import com.xnotes.core.model.Stroke
 import com.xnotes.core.pal.BlendMode
 import com.xnotes.platform.AndroidRenderer
 import com.xnotes.platform.MathRendering
+import com.xnotes.platform.renderTrace
 import kotlin.math.ceil
 import kotlin.math.floor
 
@@ -43,7 +44,8 @@ class CanvasView @JvmOverloads constructor(
                 // thread and ask for a repaint.
                 st.runAsync = { work ->
                     val ex = cacheExecutor
-                    if (ex != null && !ex.isShutdown) ex.execute(work) else work()
+                    val traced = { renderTrace("xnotes.note.cacheBuild") { work() } }
+                    if (ex != null && !ex.isShutdown) ex.execute(traced) else traced()
                 }
                 st.postToMain = { work -> mainHandler.post(work) }
                 st.onCacheReady = { requestRender() }
@@ -70,6 +72,11 @@ class CanvasView @JvmOverloads constructor(
 
     /** Invoked after the viewport is (re)laid out and the initial fit applied. */
     var afterLayout: (() -> Unit)? = null
+
+    /** Invoked after the first visible page of a newly assigned document has drawable caches. */
+    var onInitialDocumentFrameReady: (() -> Unit)? = null
+
+    private var initialFrameDocument: Any? = null
 
     /** Hover handler (stylus/mouse hover) for the eraser cursor. */
     var hover: ((MotionEvent) -> Boolean)? = null
@@ -396,6 +403,10 @@ class CanvasView @JvmOverloads constructor(
     }
 
     override fun onDraw(canvas: Canvas) {
+        renderTrace("xnotes.note.draw") { drawCanvas(canvas) }
+    }
+
+    private fun drawCanvas(canvas: Canvas) {
         val st = state ?: return
         canvas.drawColor(st.palette.bg.toArgb())
 
@@ -409,14 +420,21 @@ class CanvasView @JvmOverloads constructor(
         // Paginated mode shows only the current row; neighbours never draw. Iterate the range
         // directly instead of scanning every page on every animation frame in a large document.
         val drawable = st.drawablePageRange()
+        var visiblePageCount = 0
+        var initialFrameReady = true
 
         for (i in drawable) {
             val pr = st.pageRects.getOrNull(i) ?: continue
             if (!pr.intersects(visible)) continue
+            visiblePageCount++
             val page = st.document.pages[i]
 
+            if (initialFrameDocument !== st.document) st.scheduleInitialFrameCaches(page)
+
             r.fillRect(pr, st.paperColor(page))
-            st.backgroundForOrSchedule(page)?.let { blitPageSurface(r, st, page, pr, it.surface) }
+            val background = st.backgroundForOrSchedule(page)
+            if (st.hasPageBackground(page) && background == null) initialFrameReady = false
+            background?.let { blitPageSurface(r, st, page, pr, it.surface) }
             // A live caret session lifts the flow out of the ink cache; paint it
             // immediate-mode here (under the ink, over the background) so every
             // keystroke shows without waiting for a cache rebuild. Formulas are
@@ -426,7 +444,9 @@ class CanvasView @JvmOverloads constructor(
                 r.translate(pr.left, pr.top)
                 paintUnderInk(r, st, page, st.displayRectToPage(page, visible.translate(-pr.left, -pr.top)))
             }
-            st.cacheForOrSchedule(page)?.let { blitPageSurface(r, st, page, pr, it.surface) }
+            val ink = st.cacheForOrSchedule(page)
+            if (ink == null) initialFrameReady = false
+            ink?.let { blitPageSurface(r, st, page, pr, it.surface) }
         }
         r.restore()
 
@@ -574,6 +594,13 @@ class CanvasView @JvmOverloads constructor(
         // Debug HUD on top, reading the just-pruned cache state (viewport space).
         debugOverlay.sampleFrame(System.nanoTime())
         debugOverlay.draw(r, st)
+
+        // A newly opened note starts with bare paper while its visible page caches build on the
+        // cache thread. Reveal it only after this document can draw a complete first frame.
+        if (visiblePageCount > 0 && initialFrameReady && initialFrameDocument !== st.document) {
+            initialFrameDocument = st.document
+            onInitialDocumentFrameReady?.invoke()
+        }
 
         // A formula still being set shimmers in its place; keep the sweep moving until it lands.
         if (r.standIns > 0) postInvalidateDelayed(SHIMMER_FRAME_MS)

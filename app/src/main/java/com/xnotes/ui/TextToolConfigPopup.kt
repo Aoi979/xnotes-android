@@ -1,17 +1,25 @@
 package com.xnotes.ui
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -28,6 +36,7 @@ import com.xnotes.core.pal.FontFace
 import com.xnotes.core.text.FlowDefaults
 import com.xnotes.core.text.FlowMargins
 import com.xnotes.platform.FontCatalog
+import com.xnotes.ui.icons.XnotesIcons
 import com.xnotes.ui.theme.LocalPalette
 import com.xnotes.ui.theme.toComposeColor
 import kotlin.math.roundToInt
@@ -70,7 +79,7 @@ internal fun TextToolConfigPopup(editor: Editor, onDismiss: () -> Unit) {
             SpinField(stringResource(R.string.size_pt), config.sizePt, min = 6.0, max = 96.0) { apply(config.copy(sizePt = it)) }
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
                 Text(stringResource(R.string.colour), color = palette.textDim.toComposeColor(), fontSize = 13.sp, modifier = Modifier.width(74.dp))
-                ModeChip(stringResource(R.string.auto), config.color == null) { apply(config.copy(color = null)) }
+                ModeChoiceButton(stringResource(R.string.auto), config.color == null) { apply(config.copy(color = null)) }
                 Spacer(Modifier.width(8.dp))
                 ColorPickerDot(
                     config.color,
@@ -92,7 +101,32 @@ internal fun TextToolConfigPopup(editor: Editor, onDismiss: () -> Unit) {
             SpinField(stringResource(R.string.edge_top), m.topMm, FlowMargins.MIN_MM, FlowMargins.MAX_MM) { apply(config.copy(margins = m.copy(topMm = it))) }
             SpinField(stringResource(R.string.edge_bottom), m.bottomMm, FlowMargins.MIN_MM, FlowMargins.MAX_MM) { apply(config.copy(margins = m.copy(bottomMm = it))) }
 
-            Spacer(Modifier.size(8.dp))
+            if (showNewNoteRow && config != editor.factoryFlow) {
+                // The checkbox's 48dp touch frame insets the drawn box; pull the row back to align it.
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.offset(x = (-14).dp)) {
+                    Checkbox(
+                        checked = editor.newNoteFlow != editor.factoryFlow && config == editor.newNoteFlow,
+                        onCheckedChange = { on -> editor.saveNewNoteFlow(if (on) config else editor.factoryFlow) },
+                    )
+                    Text(
+                        stringResource(R.string.default_for_new_notes),
+                        color = palette.text.toComposeColor(),
+                        fontSize = 12.sp,
+                    )
+                }
+                Spacer(Modifier.size(4.dp))
+            }
+            Row(Modifier.align(Alignment.End)) {
+                TextButton(onClick = { apply(editor.factoryFlow) }) { Text(stringResource(R.string.reset)) }
+            }
+
+            HorizontalDivider(color = palette.border.toComposeColor(), modifier = Modifier.padding(vertical = 6.dp))
+            Text(
+                stringResource(R.string.text_input_behavior),
+                color = palette.textDim.toComposeColor(),
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.padding(bottom = 2.dp),
+            )
             // App preferences, not document defaults: Reset and the new-note row skip them.
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.offset(x = (-14).dp)) {
                 Checkbox(checked = editor.markdownInput, onCheckedChange = { editor.setMarkdownInputPref(it) })
@@ -110,24 +144,6 @@ internal fun TextToolConfigPopup(editor: Editor, onDismiss: () -> Unit) {
                     fontSize = 13.sp,
                 )
             }
-            if (showNewNoteRow && config != editor.factoryFlow) {
-                // The checkbox's 48dp touch frame insets the drawn box; pull the row back to align it.
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.offset(x = (-14).dp)) {
-                    Checkbox(
-                        checked = editor.newNoteFlow != editor.factoryFlow && config == editor.newNoteFlow,
-                        onCheckedChange = { on -> editor.saveNewNoteFlow(if (on) config else editor.factoryFlow) },
-                    )
-                    Text(
-                        stringResource(R.string.default_for_new_notes),
-                        color = palette.text.toComposeColor(),
-                        fontSize = 12.sp,
-                    )
-                }
-                Spacer(Modifier.size(4.dp))
-            }
-            Row(Modifier.align(Alignment.End)) {
-                ModeChip(stringResource(R.string.reset), false) { apply(editor.factoryFlow) }
-            }
         }
     }
 }
@@ -137,13 +153,15 @@ private fun FaceDropdown(current: FontFace, monoOnly: Boolean = false, onPick: (
     val palette = LocalPalette.current
     var open by remember { mutableStateOf(false) }
     Box {
-        Row(Modifier.clickable { open = true }.padding(vertical = 6.dp, horizontal = 4.dp)) {
-            Text(
-                fontLabel(current),
-                color = palette.text.toComposeColor(),
-                style = TextStyle(fontFamily = current.toComposeFamily(), fontSize = 14.sp),
-            )
-            Text(" ▾", color = palette.textDim.toComposeColor(), fontSize = 11.sp)
+        TextButton(onClick = { open = true }, contentPadding = PaddingValues(horizontal = 8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    fontLabel(current),
+                    color = palette.text.toComposeColor(),
+                    style = TextStyle(fontFamily = current.toComposeFamily(), fontSize = 14.sp),
+                )
+                Icon(XnotesIcons.chevronDown, null, tint = palette.textDim.toComposeColor(), modifier = Modifier.size(14.dp))
+            }
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             FontMenuItems(current = current, monoOnly = monoOnly) {
@@ -160,8 +178,12 @@ private fun SpinField(label: String, value: Double, min: Double, max: Double, on
     val palette = LocalPalette.current
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(label, color = palette.textDim.toComposeColor(), fontSize = 13.sp, modifier = Modifier.width(74.dp))
-        Box(Modifier.size(34.dp).clickable { onChange((value - 1.0).coerceIn(min, max)) }, contentAlignment = Alignment.Center) {
-            Text("−", color = palette.text.toComposeColor(), fontSize = 18.sp)
+        IconButton(onClick = { onChange((value - 1.0).coerceIn(min, max)) }) {
+            Icon(
+                Icons.Filled.Remove,
+                contentDescription = stringResource(R.string.decrease_value, label),
+                tint = palette.text.toComposeColor(),
+            )
         }
         Text(
             value.roundToInt().toString(),
@@ -169,8 +191,12 @@ private fun SpinField(label: String, value: Double, min: Double, max: Double, on
             fontSize = 14.sp,
             modifier = Modifier.width(30.dp),
         )
-        Box(Modifier.size(34.dp).clickable { onChange((value + 1.0).coerceIn(min, max)) }, contentAlignment = Alignment.Center) {
-            Text("+", color = palette.text.toComposeColor(), fontSize = 18.sp)
+        IconButton(onClick = { onChange((value + 1.0).coerceIn(min, max)) }) {
+            Icon(
+                Icons.Filled.Add,
+                contentDescription = stringResource(R.string.increase_value, label),
+                tint = palette.text.toComposeColor(),
+            )
         }
     }
 }

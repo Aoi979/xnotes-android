@@ -134,6 +134,18 @@ fun InfiniteToolbar(
                         onRecord = onRecordAudio,
                     )
 
+                    ToolbarItem.MATH -> ToolbarIcon(
+                        XnotesIcons.matrix,
+                        stringResource(R.string.canvas_math_tools),
+                        active = editor.mathToolsOpen,
+                    ) { editor.mathToolsOpen = true }
+
+                    ToolbarItem.CUTE -> ToolbarIcon(
+                        XnotesIcons.cuteLayout,
+                        stringResource(R.string.cute_title),
+                        active = editor.cuteToolsOpen,
+                    ) { editor.openCuteTools() }
+
                     ToolbarItem.COLORS ->
                         editor.toolbarColors.take(editor.toolbarColorCount).forEachIndexed { i, color ->
                             Box {
@@ -199,4 +211,7 @@ fun InfiniteToolbar(
         }
         Spacer(Modifier.padding(horizontal = 2.dp))
     }
+    if (editor.mathToolsOpen) CanvasMathDialog(editor) { editor.mathToolsOpen = false }
+    if (editor.linearTransformOpen) CanvasLinearTransformDialog(editor) { editor.linearTransformOpen = false }
+    if (editor.cuteToolsOpen) CuteLayoutDialog(editor) { editor.cuteToolsOpen = false }
 }

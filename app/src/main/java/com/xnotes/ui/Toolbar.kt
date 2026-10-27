@@ -1,11 +1,15 @@
 package com.xnotes.ui
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -19,6 +23,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -182,7 +187,7 @@ private fun ToolbarItemView(
 ) {
     when (item) {
         // Canvas-only items; a stored paged layout can never hold one, so nothing is drawn.
-        ToolbarItem.WAYPOINTS, ToolbarItem.MINIMAP -> Unit
+        ToolbarItem.WAYPOINTS, ToolbarItem.MINIMAP, ToolbarItem.MATH, ToolbarItem.CUTE -> Unit
 
         ToolbarItem.HOME -> ToolbarIcon(XnotesIcons.prev, stringResource(R.string.toolbar_home)) { onOpenBackstage() }
         // A name has no room down a side rail.
@@ -433,7 +438,7 @@ internal fun Modifier.toolGlide(glide: ToolGlide, armed: Any?): Modifier {
     val trip = remember { GlideTrip() }
     val progress = remember { Animatable(1f) }
     val shown = remember { Animatable(0f) }
-    LaunchedEffect(target) {
+    LaunchedEffect(target, bar.vertical, density) {
         if (target == null) {
             shown.animateTo(0f, tween(SELECT_FADE_MS))
             return@LaunchedEffect
@@ -510,7 +515,11 @@ internal fun ToolbarIcon(
     // No ripple: the circle is the feedback, and a white flash over it reads as a glitch.
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    val press by animateFloatAsState(if (pressed) 0.85f else 1f, spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessMedium), label = "toolPress")
+    val press by animateFloatAsState(
+        if (pressed) 0.92f else 1f,
+        XnotesMotion.fastSpatialSpec(),
+        label = "toolPress",
+    )
     Tooltip(contentDescription, hint = hint, shortcut = shortcut) {
         Box(
             Modifier.size(bar.button).clickable(interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick),
@@ -597,13 +606,43 @@ private fun Rule() {
 @Composable
 private fun PageCounter(current: Int, count: Int, modifier: Modifier) {
     if (!LocalBar.current.vertical) {
-        Label("$current / $count", modifier)
+        val palette = LocalPalette.current
+        val labelSize = LocalBar.current.label
+        Row(modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            CurrentPageNumber(current)
+            Text(" / $count", color = palette.textDim.toComposeColor(), fontSize = labelSize, maxLines = 1)
+        }
         return
     }
     Column(modifier.padding(vertical = 2.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Label("$current")
+        CurrentPageNumber(current, Modifier.padding(horizontal = 4.dp))
         Rule()
         Label("$count")
+    }
+}
+
+/** The active page rolls in the direction of travel; the canvas itself stays spatially stable. */
+@Composable
+private fun CurrentPageNumber(current: Int, modifier: Modifier = Modifier) {
+    val palette = LocalPalette.current
+    val labelSize = LocalBar.current.label
+    AnimatedContent(
+        targetState = current,
+        transitionSpec = {
+            val direction = if (targetState > initialState) 1 else -1
+            (slideInVertically(
+                animationSpec = XnotesMotion.fastSpatialSpec(),
+                initialOffsetY = { height -> height / 2 * direction },
+            ) + fadeIn(animationSpec = XnotesMotion.fastEffectsSpec())) togetherWith
+                (slideOutVertically(
+                    animationSpec = XnotesMotion.fastSpatialSpec(),
+                    targetOffsetY = { height -> -height / 2 * direction },
+                ) + fadeOut(animationSpec = XnotesMotion.fastEffectsSpec()))
+        },
+        label = "current page number",
+        modifier = modifier,
+    ) { page ->
+        Text("$page", color = palette.textDim.toComposeColor(), fontSize = labelSize, maxLines = 1)
     }
 }
 

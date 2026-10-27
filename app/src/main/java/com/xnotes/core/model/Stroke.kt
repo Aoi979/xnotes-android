@@ -573,7 +573,10 @@ class Stroke(
     /** Transform every sample and scale the width-bearing style fields (base width, taper, dash
      *  runs) by the transform's linear factor, so a resized stroke looks zoomed; a pure rotation
      *  (factor 1) leaves the width untouched. */
-    override fun applyTransform(t: Affine) {
+    override fun applyTransform(t: Affine) = applyTransform(t, scaleWidth = true)
+
+    /** A mathematical map may collapse area to zero while the handwritten line stays legible. */
+    fun applyTransform(t: Affine, scaleWidth: Boolean) {
         val s = pts
         if (s.n > 0) {
             // Re-origin on the transformed first sample so the offsets stay stroke-local; a rotation
@@ -589,7 +592,7 @@ class Stroke(
             }
             pts = Samples(first.x, first.y, xa, ya, s.pa, s.ta, s.n)
         }
-        val k = t.linearScale
+        val k = if (scaleWidth) t.linearScale else 1.0
         if (k != 1.0) {
             config = config.copy(
                 baseWidth = config.baseWidth * k,

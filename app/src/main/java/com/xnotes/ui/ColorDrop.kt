@@ -138,7 +138,8 @@ internal class ColorDropper(private val surface: DropSurface) {
     var drag by mutableStateOf<ColorDrag?>(null)
         private set
 
-    private val worker by lazy { Executors.newSingleThreadExecutor { r -> Thread(r, "xnotes-colour-drop").apply { isDaemon = true } } }
+    private val workerDelegate = lazy { Executors.newSingleThreadExecutor { r -> Thread(r, "xnotes-colour-drop").apply { isDaemon = true } } }
+    private val worker by workerDelegate
     private val main = Handler(Looper.getMainLooper())
     private val pending = AtomicReference<Ask?>(null)
 
@@ -179,6 +180,13 @@ internal class ColorDropper(private val surface: DropSurface) {
     fun cancel() {
         drag = null
         generation++
+    }
+
+    /** Cancel pending previews without starting a worker for an editor that never used colour drop. */
+    fun release() {
+        cancel()
+        pending.set(null)
+        if (workerDelegate.isInitialized()) worker.shutdown()
     }
 
     private fun ask(window: Offset, color: Rgba, drop: Boolean) {

@@ -1,6 +1,7 @@
 package com.xnotes.ui.theme
 
 import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -18,10 +19,16 @@ fun Rgba.toComposeColor(): Color = Color(r, g, b, a)
 val LocalPalette = staticCompositionLocalOf { Palette.DEFAULT }
 
 @Composable
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 fun XnotesTheme(palette: Palette, corners: CornerStyle = CornerStyle.ROUNDED, content: @Composable () -> Unit) {
     val shapes = remember(corners) { uiShapes(corners) }
     CompositionLocalProvider(LocalPalette provides palette) {
-        MaterialTheme(colorScheme = palette.composeColorScheme(), shapes = shapes, content = content)
+        MaterialTheme(
+            colorScheme = palette.composeColorScheme(),
+            motionScheme = com.xnotes.ui.xnotesMotionScheme,
+            shapes = shapes,
+            content = content,
+        )
     }
 }
 

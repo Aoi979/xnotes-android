@@ -1,6 +1,7 @@
 package com.xnotes.ui
 
 import androidx.annotation.StringRes
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -15,11 +16,15 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -29,6 +34,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -48,8 +56,8 @@ import com.xnotes.ui.theme.LocalPalette
 import com.xnotes.ui.theme.toComposeColor
 
 /**
- * The shape tool's popup: its chips page by page, swiped sideways, the connectors below them the
- * same way, then the settings the chosen chip takes. A closed chip offers a fill with its own
+ * The shape tool's popup: its shape choices page by page, swiped sideways, the connectors below them the
+ * same way, then the settings the chosen preset takes. A closed preset offers a fill with its own
  * colour, an open one or a connector a head at either end, and a star or polygon a minus/plus for
  * its count.
  */
@@ -63,12 +71,18 @@ fun ShapeConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
     val chip = config.chip
     val connecting = config.connector != null
     val ink = editor.hostToolbarColors.getOrNull(editor.hostActiveColorIndex) ?: Rgba(0, 0, 0)
+    // DropdownMenu measures its content intrinsically. BoxWithConstraints uses subcomposition
+    // and cannot answer that query, so derive the width from the current app window instead.
+    val popupWidth = (LocalConfiguration.current.screenWidthDp.dp - 32.dp)
+        .coerceIn(232.dp, 336.dp)
+    val maxColumns = minOf(ShapePresets.COLUMNS, ConnectorPresets.COLUMNS)
+    val columns = ((popupWidth - 28.dp + GAP.dp) / (CELL.dp + GAP.dp)).toInt().coerceIn(3, maxColumns)
 
     DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
-        Column(Modifier.width(284.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
+        Column(Modifier.width(popupWidth).padding(horizontal = 14.dp, vertical = 8.dp)) {
             PopupTitle(stringResource(R.string.title_shape))
-            ShapePager(config, onPage = { emit(config.copy(shapePage = it)) }, onPick = { emit(config.choose(it)) })
-            ConnectorPager(config, onPage = { emit(config.copy(connectorPage = it)) }, onPick = { emit(config.choose(it)) })
+            ShapePager(config, columns, onPage = { emit(config.copy(shapePage = it)) }, onPick = { emit(config.choose(it)) })
+            ConnectorPager(config, columns, onPage = { emit(config.copy(connectorPage = it)) }, onPick = { emit(config.choose(it)) })
             if (!connecting && chip.counted) CountRow(config) { emit(config.copy(n = it)) }
             if (!connecting && !config.placesCorners) {
                 ToggleRow(stringResource(R.string.caption_perfect), config.perfect) { emit(config.copy(perfect = it)) }
@@ -105,38 +119,40 @@ fun ShapeConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
     }
 }
 
-/** The shape chips, [ShapePresets.COLUMNS] to a row, one family to a page. */
+/** The shape picker lays out each preset page using the number of columns available to its popup. */
 @Composable
-private fun ShapePager(config: ShapeConfig, onPage: (Int) -> Unit, onPick: (ShapePreset) -> Unit) {
+private fun ShapePager(config: ShapeConfig, columns: Int, onPage: (Int) -> Unit, onPick: (ShapePreset) -> Unit) {
     val pages = ShapePresets.pages
-    ChipPager(pages.size, config.shapePage, { pageLabel(pages[it]) }, ShapePresets.ROWS, onPage) { page ->
-        for (row in pages[page].presets.chunked(ShapePresets.COLUMNS)) {
+    val rows = pages.maxOf { (it.presets.size + columns - 1) / columns }
+    IconChoicePager(pages.size, config.shapePage, { pageLabel(pages[it]) }, rows, onPage) { page ->
+        for (row in pages[page].presets.chunked(columns)) {
             Row(horizontalArrangement = Arrangement.spacedBy(GAP.dp)) {
-                for (p in row) KindChip(ShapeIcons.of(p), stringResource(presetLabel(p.key)), selected = p.key == config.preset) { onPick(p) }
+                for (p in row) IconChoiceButton(ShapeIcons.of(p), stringResource(presetLabel(p.key)), selected = p.key == config.preset) { onPick(p) }
             }
         }
     }
 }
 
-/** The connector chips, [ConnectorPresets.COLUMNS] to a row, two rows to a page. */
+/** The connector choices, [ConnectorPresets.COLUMNS] to a row, two rows to a page. */
 @Composable
-private fun ConnectorPager(config: ShapeConfig, onPage: (Int) -> Unit, onPick: (ConnectorPreset) -> Unit) {
+private fun ConnectorPager(config: ShapeConfig, columns: Int, onPage: (Int) -> Unit, onPick: (ConnectorPreset) -> Unit) {
     val pages = ConnectorPresets.pages
-    ChipPager(pages.size, config.connectorPage, { connectorPageLabel(pages[it]) }, ConnectorPresets.ROWS, onPage) { page ->
-        for (row in pages[page].presets.chunked(ConnectorPresets.COLUMNS)) {
+    val rows = pages.maxOf { (it.presets.size + columns - 1) / columns }
+    IconChoicePager(pages.size, config.connectorPage, { connectorPageLabel(pages[it]) }, rows, onPage) { page ->
+        for (row in pages[page].presets.chunked(columns)) {
             Row(horizontalArrangement = Arrangement.spacedBy(GAP.dp)) {
-                for (p in row) KindChip(ShapeIcons.connector(p), stringResource(connectorLabel(p.key)), selected = p.key == config.preset) { onPick(p) }
+                for (p in row) IconChoiceButton(ShapeIcons.connector(p), stringResource(connectorLabel(p.key)), selected = p.key == config.preset) { onPick(p) }
             }
         }
     }
 }
 
 /**
- * Chips swiped sideways a page at a time: the page's caption above, the dots below, and every page
- * [rows] chips tall so a swipe never makes the popup jump. Remembers its page through [onPage].
+ * Icon choices swiped sideways a page at a time: the page's caption above, the dots below, and every
+ * page [rows] buttons tall so a swipe never makes the popup jump. Remembers its page through [onPage].
  */
 @Composable
-private fun ChipPager(
+private fun IconChoicePager(
     pageCount: Int,
     initialPage: Int,
     caption: (Int) -> Int,
@@ -153,8 +169,11 @@ private fun ChipPager(
         fontSize = 12.sp,
         modifier = Modifier.padding(bottom = 4.dp),
     )
-    HorizontalPager(state = state, modifier = Modifier.fillMaxWidth().height((rows * CHIP + (rows - 1) * GAP).dp)) { page ->
-        Column(verticalArrangement = Arrangement.spacedBy(GAP.dp)) { content(page) }
+    HorizontalPager(state = state, modifier = Modifier.fillMaxWidth().height((rows * CELL + (rows - 1) * GAP).dp)) { page ->
+        Column(
+            Modifier.selectableGroup(),
+            verticalArrangement = Arrangement.spacedBy(GAP.dp),
+        ) { content(page) }
     }
     if (pageCount > 1) {
         Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.Center) {
@@ -215,30 +234,37 @@ private fun Swatch(color: Rgba, selected: Boolean, label: String?, mark: Boolean
     val palette = LocalPalette.current
     val body = @Composable {
         Box(
-            Modifier.size(26.dp).clip(CircleShape).background(color.toComposeColor())
-                .border(if (selected) 2.dp else 1.dp, (if (selected) palette.accent else palette.border).toComposeColor(), CircleShape)
-                .clickable(onClick = onClick),
+            Modifier.minimumInteractiveComponentSize().clickable(onClick = onClick),
             contentAlignment = Alignment.Center,
         ) {
-            if (mark) {
-                Icon(
-                    XnotesIcons.link,
-                    contentDescription = label,
-                    tint = (if (color.luminance() > 0.55) Rgba(0, 0, 0) else Rgba(255, 255, 255)).toComposeColor(),
-                    modifier = Modifier.size(14.dp),
-                )
+            Box(
+                Modifier.size(26.dp).clip(CircleShape).background(color.toComposeColor())
+                    .border(if (selected) 2.dp else 1.dp, (if (selected) palette.accent else palette.border).toComposeColor(), CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (mark) {
+                    Icon(
+                        XnotesIcons.link,
+                        contentDescription = label,
+                        tint = (if (color.luminance() > 0.55) Rgba(0, 0, 0) else Rgba(255, 255, 255)).toComposeColor(),
+                        modifier = Modifier.size(14.dp),
+                    )
+                }
             }
         }
     }
     if (label != null) Tooltip(label) { body() } else body()
 }
 
-/** One end's head: a chip for each, drawn on a short line. */
+/** One end's head: an icon choice for each, drawn on a short line. */
 @Composable
 private fun HeadRow(caption: String, chosen: Head, atStart: Boolean, onPick: (Head) -> Unit) {
     Text(caption, color = LocalPalette.current.text.toComposeColor(), fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
-    Row(Modifier.padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(GAP.dp)) {
-        for (h in Head.entries) KindChip(ShapeIcons.head(h, atStart), stringResource(headLabel(h)), selected = h == chosen) { onPick(h) }
+    Row(
+        Modifier.padding(vertical = 4.dp).selectableGroup(),
+        horizontalArrangement = Arrangement.spacedBy(GAP.dp),
+    ) {
+        for (h in Head.entries) IconChoiceButton(ShapeIcons.head(h, atStart), stringResource(headLabel(h)), selected = h == chosen) { onPick(h) }
     }
 }
 
@@ -253,23 +279,31 @@ private fun CountRow(config: ShapeConfig, onChange: (Int) -> Unit) {
             stringResource(countLabel(config.chip.kind.countKind)),
             color = palette.text.toComposeColor(), fontSize = 12.sp, modifier = Modifier.width(120.dp),
         )
-        StepButton("−", stringResource(R.string.count_fewer), enabled = count > range.first) { onChange(count - 1) }
+        StepButton(XnotesIcons.minus, stringResource(R.string.count_fewer), enabled = count > range.first) { onChange(count - 1) }
         Text("$count", color = palette.text.toComposeColor(), fontSize = 14.sp, modifier = Modifier.width(36.dp).padding(horizontal = 8.dp))
-        StepButton("+", stringResource(R.string.count_more), enabled = count < range.last) { onChange(count + 1) }
+        StepButton(XnotesIcons.plus, stringResource(R.string.count_more), enabled = count < range.last) { onChange(count + 1) }
     }
 }
 
 @Composable
-private fun StepButton(glyph: String, label: String, enabled: Boolean, onClick: () -> Unit) {
+private fun StepButton(icon: ImageVector, label: String, enabled: Boolean, onClick: () -> Unit) {
     val palette = LocalPalette.current
     Tooltip(label) {
-        Box(
-            Modifier.size(30.dp).clip(CircleShape)
-                .border(1.dp, palette.border.toComposeColor(), CircleShape)
-                .clickable(enabled = enabled, onClick = onClick),
-            contentAlignment = Alignment.Center,
+        OutlinedIconButton(
+            onClick = onClick,
+            enabled = enabled,
+            modifier = Modifier.size(40.dp),
+            colors = IconButtonDefaults.outlinedIconButtonColors(
+                containerColor = Color.Transparent,
+                contentColor = palette.text.toComposeColor(),
+                disabledContentColor = palette.textDim.toComposeColor(),
+            ),
+            border = BorderStroke(
+                1.dp,
+                palette.border.toComposeColor().copy(alpha = if (enabled) 1f else 0.38f),
+            ),
         ) {
-            Text(glyph, color = (if (enabled) palette.text else palette.textDim).toComposeColor(), fontSize = 16.sp)
+            Icon(icon, contentDescription = label, modifier = Modifier.size(18.dp))
         }
     }
 }
@@ -428,6 +462,6 @@ private fun headLabel(head: Head): Int = when (head) {
     Head.HOLLOW_DIAMOND -> R.string.head_hollow_diamond
 }
 
-/** A chip is 38 dp across; six of them and their gaps fill the popup's 256 dp. */
-private const val CHIP = 38
-private const val GAP = 5
+/** Each choice reserves a 48 dp touch target; the grid adapts between three and six columns. */
+private const val CELL = 48
+private const val GAP = 4

@@ -9,6 +9,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -114,6 +115,13 @@ interface TextEditHost {
  */
 @Composable
 fun TextEditorOverlay(editor: TextEditHost, field: EditingField) {
+    // A commit followed by another edit can happen before Compose observes the intermediate null.
+    // Reset the field's text, selection and IME state per session, while retaining them on a pan.
+    key(editor, field.sessionKey) { TextEditorContent(editor, field) }
+}
+
+@Composable
+private fun TextEditorContent(editor: TextEditHost, field: EditingField) {
     val density = LocalDensity.current
     val palette = LocalPalette.current
     var value by remember { mutableStateOf(TextFieldValue(field.text, TextRange(field.text.length))) }

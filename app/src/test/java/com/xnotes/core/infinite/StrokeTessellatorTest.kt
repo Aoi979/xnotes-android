@@ -13,6 +13,45 @@ import kotlin.math.hypot
 
 class StrokeTessellatorTest {
 
+    @Test fun adjacentQuadsShareTheirRailVerticesWithoutChangingTriangleAttributes() {
+        val g = geometryOf(0.0 to 0.0, 10.0 to 2.0, 20.0 to 1.0, 30.0 to 6.0)
+        val mesh = StrokeTessellator.tessellate(g)
+        for (i in 0 until g.pointCount - 1) {
+            val corners = intArrayOf(i * 2, i * 2 + 1, i * 2 + 3, i * 2, i * 2 + 3, i * 2 + 2)
+            for (j in corners.indices) assertEquals(corners[j], mesh.indices[6 * i + j])
+        }
+        for (i in 0 until g.pointCount) {
+            val l = i * 4
+            assertEquals(g.leftX(i), mesh.positions[l], 0.0)
+            assertEquals(g.leftY(i), mesh.positions[l + 1], 0.0)
+            assertEquals(g.rightX(i), mesh.positions[l + 2], 0.0)
+            assertEquals(g.rightY(i), mesh.positions[l + 3], 0.0)
+            assertEquals(g.leftX(i) - g.cx(i), mesh.offsets[l], 0.0)
+            assertEquals(g.rightY(i) - g.cy(i), mesh.offsets[l + 3], 0.0)
+        }
+    }
+
+    @Test fun cachedCircleAndEllipseDirectionsKeepTheExactOriginalVertices() {
+        for (radius in listOf(0.01, 0.25, 1.0, 7.5, 100.0)) {
+            val tolerance = StrokeTessellator.DEFAULT_TOLERANCE
+            val count = MeshBuilder.circleSegments(radius, tolerance)
+            val circle = MeshBuilder().also { it.circle(23.5, -4097.25, radius, tolerance) }.build()
+            val ellipse = MeshBuilder().also { it.ellipse(23.5, -4097.25, radius, radius / 2, tolerance) }.build()
+            val step = 2.0 * kotlin.math.PI / count
+            for (i in 0 until count) {
+                val x = radius * kotlin.math.cos(i * step)
+                val y = radius * kotlin.math.sin(i * step)
+                val at = 2 * (i + 1)
+                assertEquals(23.5 + x, circle.positions[at], 0.0)
+                assertEquals(-4097.25 + y, circle.positions[at + 1], 0.0)
+                assertEquals(x, circle.offsets[at], 0.0)
+                assertEquals(y, circle.offsets[at + 1], 0.0)
+                assertEquals(23.5 + x, ellipse.positions[at], 0.0)
+                assertEquals(-4097.25 + radius / 2 * kotlin.math.sin(i * step), ellipse.positions[at + 1], 0.0)
+            }
+        }
+    }
+
     private fun geometryOf(vararg pts: Pair<Double, Double>, tool: Tool = Tool.PEN): StrokeGeometry {
         val c = ToolDefaults.configFor(tool)
         return StrokeEngine.build(

@@ -20,6 +20,7 @@ output.json
 
 # --- Local machine config (SDK path, secrets) ---
 local.properties
+/.android-build.env
 *.jks
 *.keystore
 keystore.properties

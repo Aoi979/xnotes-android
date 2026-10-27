@@ -120,18 +120,27 @@ object StrokeTessellator {
 
         // Body: one quad per segment, both of its vertices taken straight off the rails, so
         // consecutive quads share an entire edge and the ribbon never gaps along its length.
+        var previousLeft = -1
+        var previousRight = -1
         for (i in from until end - 1) {
             val h0 = g.hw(i)
             val h1 = g.hw(i + 1)
-            if (h0 <= MIN_HALF_WIDTH && h1 <= MIN_HALF_WIDTH) continue
+            if (h0 <= MIN_HALF_WIDTH && h1 <= MIN_HALF_WIDTH) {
+                previousLeft = -1
+                previousRight = -1
+                continue
+            }
             // Each rail vertex remembers how far it sits from the centreline, so a stroke thinner
             // than a pixel can be widened back to one and faded instead of breaking up.
-            val l0 = b.vertex(g.leftX(i), g.leftY(i), g.leftX(i) - g.cx(i), g.leftY(i) - g.cy(i))
-            val r0 = b.vertex(g.rightX(i), g.rightY(i), g.rightX(i) - g.cx(i), g.rightY(i) - g.cy(i))
+            // The next quad uses exactly the same rail position and spine offset at this sample.
+            val l0 = if (previousLeft >= 0) previousLeft else b.vertex(g.leftX(i), g.leftY(i), g.leftX(i) - g.cx(i), g.leftY(i) - g.cy(i))
+            val r0 = if (previousRight >= 0) previousRight else b.vertex(g.rightX(i), g.rightY(i), g.rightX(i) - g.cx(i), g.rightY(i) - g.cy(i))
             val l1 = b.vertex(g.leftX(i + 1), g.leftY(i + 1), g.leftX(i + 1) - g.cx(i + 1), g.leftY(i + 1) - g.cy(i + 1))
             val r1 = b.vertex(g.rightX(i + 1), g.rightY(i + 1), g.rightX(i + 1) - g.cx(i + 1), g.rightY(i + 1) - g.cy(i + 1))
             b.triangle(l0, r0, r1)
             b.triangle(l0, r1, l1)
+            previousLeft = l1
+            previousRight = r1
         }
 
         // Round ends. A whole disc rather than a half one: it costs two extra fans per stroke and

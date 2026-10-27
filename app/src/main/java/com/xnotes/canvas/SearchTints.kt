@@ -1,6 +1,10 @@
 package com.xnotes.canvas
 
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
+import android.animation.ValueAnimator
 import android.text.StaticLayout
+import android.view.animation.LinearInterpolator
 import com.xnotes.core.geometry.Pt
 import com.xnotes.core.geometry.Rect
 import com.xnotes.core.model.Labelled
@@ -19,6 +23,10 @@ import com.xnotes.core.text.FlowPos
 import com.xnotes.core.text.FlowRange
 import com.xnotes.platform.AndroidText
 import java.util.WeakHashMap
+import kotlin.math.cos
+import kotlin.math.exp
+import kotlin.math.sin
+import kotlin.math.sqrt
 
 /**
  * The search's matches tinted on the pages shown, over ink so a match under handwriting still
@@ -50,12 +58,16 @@ class SearchTints(
     /** A match waiting on its page's text to be brought into view. */
     private var revealing: SearchHit? = null
 
+    /** Search movement is a one-shot spatial spring. Pointer input cancels it immediately. */
+    private var revealAnimator: ValueAnimator? = null
+
     private var layoutOf: TextItem? = null
     private var layoutKey: Pair<String, Double>? = null
     private var layout: StaticLayout? = null
 
     fun show(results: SearchResults?, current: SearchHit?) {
         if (results == null || results.query != this.results?.query) {
+            cancelRevealMotion()
             boxes.clear()
             reading.clear()
             unreadable.clear()
@@ -100,6 +112,13 @@ class SearchTints(
         }
         onViewChanged()
         requestRender()
+    }
+
+    /** Stops search motion at its current frame so touch, pen, and scroll gestures take over at once. */
+    fun cancelRevealMotion() {
+        val running = revealAnimator ?: return
+        revealAnimator = null
+        running.cancel()
     }
 
     private fun paint(r: Renderer, hit: SearchHit, color: Rgba, outline: Pen?) {
@@ -267,7 +286,56 @@ class SearchTints(
     }
 
     /** Scrolls the least that centres [c] on whichever axis it is off screen. */
-    private fun scrollIntoView(c: Rect) = state.scrollIntoView(c, REVEAL_MARGIN_DP * state.devicePxPerDp)
+    private fun scrollIntoView(c: Rect) {
+        cancelRevealMotion()
+        val startX = state.scrollX
+        val startY = state.scrollY
+        val target = state.scrollTargetIntoView(c, REVEAL_MARGIN_DP * state.devicePxPerDp)
+        if (kotlin.math.abs(target.x - startX) < 1.0 && kotlin.math.abs(target.y - startY) < 1.0) return
+
+        // Solve the interrupted spatial spring over a short window. ValueAnimator supplies
+        // frames and follows Android's system animator duration scale; scale 0 therefore lands next frame.
+        val animator = ValueAnimator.ofFloat(0f, SEARCH_SPRING_SECONDS).apply {
+            duration = SEARCH_SPRING_DURATION_MS
+            interpolator = LinearInterpolator()
+        }
+        revealAnimator = animator
+        animator.addUpdateListener { frame ->
+            val seconds = (frame.animatedValue as Float).toDouble()
+            state.scrollX = springValue(startX, target.x, seconds)
+            state.scrollY = springValue(startY, target.y, seconds)
+            state.clampScroll()
+            requestRender() // redraw only; don't recompose toolbars on every canvas frame
+        }
+        animator.addListener(object : AnimatorListenerAdapter() {
+            private var cancelled = false
+
+            override fun onAnimationCancel(animation: Animator) {
+                cancelled = true
+            }
+
+            override fun onAnimationEnd(animation: Animator) {
+                if (revealAnimator === animator) revealAnimator = null
+                if (!cancelled) {
+                    state.scrollX = target.x
+                    state.scrollY = target.y
+                    state.clampScroll()
+                    onViewChanged()
+                    requestRender()
+                }
+            }
+        })
+        animator.start()
+    }
+
+    private fun springValue(start: Double, target: Double, seconds: Double): Double {
+        val omega = sqrt(SEARCH_SPRING_STIFFNESS)
+        val dampedOmega = omega * sqrt(1.0 - SEARCH_SPRING_DAMPING * SEARCH_SPRING_DAMPING)
+        val displacement = start - target
+        val sine = (SEARCH_SPRING_DAMPING * omega * displacement) / dampedOmega
+        val oscillation = displacement * cos(dampedOmega * seconds) + sine * sin(dampedOmega * seconds)
+        return target + exp(-SEARCH_SPRING_DAMPING * omega * seconds) * oscillation
+    }
 
     private companion object {
         /** Accent at 25% for every match, 45% for the current one. */
@@ -276,5 +344,11 @@ class SearchTints(
 
         /** Room kept between a match brought into view and the edges. */
         const val REVEAL_MARGIN_DP = 48.0
+
+        /** Material spatial spring, settled before the 600 ms sampling window ends. */
+        const val SEARCH_SPRING_STIFFNESS = 380.0
+        const val SEARCH_SPRING_DAMPING = 0.8
+        const val SEARCH_SPRING_SECONDS = 0.6f
+        const val SEARCH_SPRING_DURATION_MS = 600L
     }
 }

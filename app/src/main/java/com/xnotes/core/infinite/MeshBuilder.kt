@@ -6,6 +6,7 @@ import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.sin
+import java.util.concurrent.atomic.AtomicReferenceArray
 
 /**
  * Growable position and index arrays, so a whole item tessellates without allocating per vertex.
@@ -60,13 +61,12 @@ internal class MeshBuilder(vertexHint: Int = 64, indexHint: Int = 96) {
         if (radius <= 0.0) return
         val segments = circleSegments(radius, tolerance)
         val centre = vertex(cx, cy)
-        val step = 2.0 * PI / segments
+        val ring = unitCircle(segments)
         var first = -1
         var prev = -1
         for (k in 0 until segments) {
-            val a = k * step
-            val dx = radius * cos(a)
-            val dy = radius * sin(a)
+            val dx = radius * ring[2 * k]
+            val dy = radius * ring[2 * k + 1]
             val v = vertex(cx + dx, cy + dy, dx, dy)
             if (first < 0) first = v else triangle(centre, prev, v)
             prev = v
@@ -79,12 +79,11 @@ internal class MeshBuilder(vertexHint: Int = 64, indexHint: Int = 96) {
         if (rx <= 0.0 || ry <= 0.0) return
         val segments = circleSegments(maxOf(rx, ry), tolerance)
         val centre = vertex(cx, cy)
-        val step = 2.0 * PI / segments
+        val ring = unitCircle(segments)
         var first = -1
         var prev = -1
         for (k in 0 until segments) {
-            val a = k * step
-            val v = vertex(cx + rx * cos(a), cy + ry * sin(a))
+            val v = vertex(cx + rx * ring[2 * k], cy + ry * ring[2 * k + 1])
             if (first < 0) first = v else triangle(centre, prev, v)
             prev = v
         }
@@ -253,6 +252,21 @@ internal class MeshBuilder(vertexHint: Int = 64, indexHint: Int = 96) {
         /** Fewest and most segments a full circle is ever cut into. */
         const val MIN_CIRCLE_SEGMENTS = 8
         const val MAX_CIRCLE_SEGMENTS = 64
+
+        // At most 57 immutable rings (~33 KiB), shared safely by UI and background mesh builders.
+        private val circles = AtomicReferenceArray<DoubleArray>(MAX_CIRCLE_SEGMENTS + 1)
+
+        private fun unitCircle(segments: Int): DoubleArray {
+            circles.get(segments)?.let { return it }
+            val ring = DoubleArray(2 * segments)
+            val step = 2.0 * PI / segments
+            for (i in 0 until segments) {
+                ring[2 * i] = cos(i * step)
+                ring[2 * i + 1] = sin(i * step)
+            }
+            circles.compareAndSet(segments, null, ring)
+            return ring
+        }
 
         /** Segments a circle of [radius] needs to stay within [tolerance] of true. */
         fun circleSegments(radius: Double, tolerance: Double): Int {

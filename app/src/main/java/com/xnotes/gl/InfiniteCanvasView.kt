@@ -5,6 +5,7 @@ import android.opengl.GLSurfaceView
 import android.util.AttributeSet
 import android.view.KeyEvent
 import android.view.MotionEvent
+import android.view.SurfaceHolder
 import com.xnotes.core.infinite.CanvasBackground
 import com.xnotes.core.infinite.CanvasViewport
 import com.xnotes.core.model.Rgba
@@ -68,6 +69,11 @@ class InfiniteCanvasView @JvmOverloads constructor(
 
     /** Invoked after the viewport is laid out, so the host can apply an initial fit. */
     var afterLayout: (() -> Unit)? = null
+
+    /** Surface callbacks run on the UI thread; readiness follows an actual buffer swap. */
+    var onSurfacePending: (() -> Unit)? = null
+    var onFirstFrameReady: (() -> Unit)? = null
+    private var surfaceGeneration = 0
 
     /** Invoked on the GL thread once a context exists or has been rebuilt after being lost. */
     var onContextReady: ((Int) -> Unit)?
@@ -221,6 +227,27 @@ class InfiniteCanvasView @JvmOverloads constructor(
         super.onAttachedToWindow()
         // A frame count only means something next to the rate the panel can actually show.
         glRenderer.displayHz = (display?.refreshRate ?: 60f).toDouble()
+    }
+
+    override fun surfaceCreated(holder: SurfaceHolder) {
+        val generation = ++surfaceGeneration
+        onSurfacePending?.invoke()
+        // The first draw is still before eglSwapBuffers. Queue back onto the GL thread so the
+        // UI can reveal this surface only after that buffer has been submitted to the compositor.
+        glRenderer.runAfterFrame {
+            queueEvent {
+                post {
+                    if (generation == surfaceGeneration && isAttachedToWindow) onFirstFrameReady?.invoke()
+                }
+            }
+        }
+        super.surfaceCreated(holder)
+    }
+
+    override fun surfaceDestroyed(holder: SurfaceHolder) {
+        surfaceGeneration++
+        onSurfacePending?.invoke()
+        super.surfaceDestroyed(holder)
     }
 
     override fun onDetachedFromWindow() {

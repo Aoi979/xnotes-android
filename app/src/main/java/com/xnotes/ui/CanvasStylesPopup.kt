@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -59,23 +60,16 @@ fun CanvasStylesPopup(editor: InfiniteEditor, onDismiss: () -> Unit) {
             PopupTitle(stringResource(R.string.title_styles))
 
             StyleCaption(stringResource(R.string.caption_pattern))
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                ModeChip(stringResource(R.string.none), background.pattern == PagePattern.NONE) {
-                    apply(background.copy(pattern = PagePattern.NONE))
-                }
-                ModeChip(stringResource(R.string.pattern_lines), background.pattern == PagePattern.LINES) {
-                    apply(background.copy(pattern = PagePattern.LINES))
-                }
-                ModeChip(stringResource(R.string.pattern_dots), background.pattern == PagePattern.DOTS) {
-                    apply(background.copy(pattern = PagePattern.DOTS))
-                }
-                ModeChip(stringResource(R.string.pattern_grid), background.pattern == PagePattern.GRID) {
-                    apply(background.copy(pattern = PagePattern.GRID))
-                }
-            }
+            ExpressiveChoiceGroup(
+                options = listOf(
+                    PagePattern.NONE to stringResource(R.string.none),
+                    PagePattern.LINES to stringResource(R.string.pattern_lines),
+                    PagePattern.DOTS to stringResource(R.string.pattern_dots),
+                    PagePattern.GRID to stringResource(R.string.pattern_grid),
+                ),
+                selected = background.pattern,
+                onSelect = { apply(background.copy(pattern = it)) },
+            )
 
             Spacer(Modifier.size(12.dp))
             SliderRow(
@@ -112,7 +106,7 @@ fun CanvasStylesPopup(editor: InfiniteEditor, onDismiss: () -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                ModeChip(stringResource(R.string.paper_theme), background.paperColor == null) { apply(background.copy(paperColor = null)) }
+                ModeChoiceButton(stringResource(R.string.paper_theme), background.paperColor == null) { apply(background.copy(paperColor = null)) }
                 SwatchCircles(editor.swatchStore, SwatchRole.PAPER, background.paperColor) {
                     apply(background.copy(paperColor = it))
                 }
@@ -134,8 +128,8 @@ fun CanvasStylesPopup(editor: InfiniteEditor, onDismiss: () -> Unit) {
                 }
                 Spacer(Modifier.size(4.dp))
             }
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                ModeChip(stringResource(R.string.reset), selected = false) { apply(CanvasBackground()) }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = { apply(CanvasBackground()) }) { Text(stringResource(R.string.reset)) }
             }
         }
     }

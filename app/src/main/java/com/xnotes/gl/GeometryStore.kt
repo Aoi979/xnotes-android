@@ -45,6 +45,12 @@ class GeometryStore {
 
     private var vertexMirror: ByteBuffer = allocate(INITIAL_VERTICES * VERTEX_STRIDE)
     private var indexMirror: ByteBuffer = allocate(INITIAL_INDICES * INDEX_STRIDE)
+    private var vertexWords = vertexMirror.asIntBuffer()
+    private var indexWords = indexMirror.asIntBuffer()
+
+    // Bounded and reused even for very large meshes: no second document-sized staging allocation.
+    private val packing by lazy { IntArray(PACK_VERTICES * PackedGeometry.WORDS_PER_VERTEX) }
+    private val littleEndian = ByteOrder.nativeOrder() == ByteOrder.LITTLE_ENDIAN
 
     private val vertexAllocator = SlotAllocator(INITIAL_VERTICES)
     private val indexAllocator = SlotAllocator(INITIAL_INDICES)
@@ -100,46 +106,27 @@ class GeometryStore {
                 return null
             }
 
-        val r = color.r.toByte()
-        val g = color.g.toByte()
-        val b = color.b.toByte()
-        val a = color.a.toByte()
-        val perVertex = mesh.colors?.takeIf { it.size >= vCount }
-        var p = vOffset * VERTEX_STRIDE
-        for (i in 0 until vCount) {
-            val x = mesh.positions[2 * i]
-            val y = mesh.positions[2 * i + 1]
-            val cx = chunkIndex(x)
-            val cy = chunkIndex(y)
-            vertexMirror.putFloat(p, (x - cx * CHUNK_SIZE).toFloat())
-            vertexMirror.putFloat(p + 4, (y - cy * CHUNK_SIZE).toFloat())
-            vertexMirror.putShort(p + 8, cx.toInt().toShort())
-            vertexMirror.putShort(p + 10, cy.toInt().toShort())
-            if (perVertex != null) {
-                val c = perVertex[i]
-                vertexMirror.put(p + 12, ((c shr 16) and 0xFF).toByte())
-                vertexMirror.put(p + 13, ((c shr 8) and 0xFF).toByte())
-                vertexMirror.put(p + 14, (c and 0xFF).toByte())
-                vertexMirror.put(p + 15, ((c ushr 24) and 0xFF).toByte())
-            } else {
-                vertexMirror.put(p + 12, r)
-                vertexMirror.put(p + 13, g)
-                vertexMirror.put(p + 14, b)
-                vertexMirror.put(p + 15, a)
-            }
-            // How far this vertex sits from its own line, quantized; the shader uses it to keep a
-            // sub-pixel stroke a line rather than a shimmer.
-            vertexMirror.putShort(p + 16, quantizeOffset(mesh.offsets[2 * i]))
-            vertexMirror.putShort(p + 18, quantizeOffset(mesh.offsets[2 * i + 1]))
-            p += VERTEX_STRIDE
+        val packed = packing
+        vertexWords.clear()
+        vertexWords.position(vOffset * PackedGeometry.WORDS_PER_VERTEX)
+        var from = 0
+        while (from < vCount) {
+            val count = minOf(PACK_VERTICES, vCount - from)
+            PackedGeometry.vertices(mesh, color, from, count, packed, littleEndian)
+            vertexWords.put(packed, 0, count * PackedGeometry.WORDS_PER_VERTEX)
+            from += count
         }
         markVertexDirty(vOffset, vCount)
 
-        var q = iOffset * INDEX_STRIDE
-        for (i in 0 until iCount) {
+        indexWords.clear()
+        indexWords.position(iOffset)
+        from = 0
+        while (from < iCount) {
+            val count = minOf(packed.size, iCount - from)
             // Mesh indices are relative to their own first vertex; rebase into the shared buffer.
-            indexMirror.putInt(q, vOffset + mesh.indices[i])
-            q += INDEX_STRIDE
+            for (i in 0 until count) packed[i] = vOffset + mesh.indices[from + i]
+            indexWords.put(packed, 0, count)
+            from += count
         }
         markIndexDirty(iOffset, iCount)
 
@@ -148,13 +135,11 @@ class GeometryStore {
 
     /** Recolour a slice in place, without re-tessellating. */
     fun recolor(slice: BufferSlice, color: Rgba) {
-        var p = slice.vertexOffset * VERTEX_STRIDE + 12
+        val rgba = PackedGeometry.rgbaWord(color.toArgb(), littleEndian)
+        var p = slice.vertexOffset * PackedGeometry.WORDS_PER_VERTEX + 3
         for (i in 0 until slice.vertexCount) {
-            vertexMirror.put(p, color.r.toByte())
-            vertexMirror.put(p + 1, color.g.toByte())
-            vertexMirror.put(p + 2, color.b.toByte())
-            vertexMirror.put(p + 3, color.a.toByte())
-            p += VERTEX_STRIDE
+            vertexWords.put(p, rgba)
+            p += PackedGeometry.WORDS_PER_VERTEX
         }
         markVertexDirty(slice.vertexOffset, slice.vertexCount)
     }
@@ -177,11 +162,17 @@ class GeometryStore {
         // A reservation that cannot be had is not a failure: the puts behind it grow as they need to.
         val vertexCap = vertexAllocator.reservedCapacity(vertices)
         if (vertexCap != null && vertexCap > vertexAllocator.capacity) {
-            resize(vertexMirror, vertexAllocator, vertexCap, VERTEX_STRIDE)?.let { vertexMirror = it }
+            resize(vertexMirror, vertexAllocator, vertexCap, VERTEX_STRIDE)?.let {
+                vertexMirror = it
+                vertexWords = it.asIntBuffer()
+            }
         }
         val indexCap = indexAllocator.reservedCapacity(indices)
         if (indexCap != null && indexCap > indexAllocator.capacity) {
-            resize(indexMirror, indexAllocator, indexCap, INDEX_STRIDE)?.let { indexMirror = it }
+            resize(indexMirror, indexAllocator, indexCap, INDEX_STRIDE)?.let {
+                indexMirror = it
+                indexWords = it.asIntBuffer()
+            }
         }
     }
 
@@ -281,14 +272,20 @@ class GeometryStore {
     private fun growVertices(need: Int): Boolean {
         val cap = vertexAllocator.grownCapacity(need)
         val next = cap?.let { resize(vertexMirror, vertexAllocator, it, VERTEX_STRIDE) }
-        if (next == null) outOfMemory = true else vertexMirror = next
+        if (next == null) outOfMemory = true else {
+            vertexMirror = next
+            vertexWords = next.asIntBuffer()
+        }
         return next != null
     }
 
     private fun growIndices(need: Int): Boolean {
         val cap = indexAllocator.grownCapacity(need)
         val next = cap?.let { resize(indexMirror, indexAllocator, it, INDEX_STRIDE) }
-        if (next == null) outOfMemory = true else indexMirror = next
+        if (next == null) outOfMemory = true else {
+            indexMirror = next
+            indexWords = next.asIntBuffer()
+        }
         return next != null
     }
 
@@ -356,20 +353,18 @@ class GeometryStore {
         /** Content pixels a chunk spans; see [CanvasProjection], which the shader agrees with. */
         const val CHUNK_SIZE = CanvasProjection.CHUNK_SIZE
 
-        const val VERTEX_STRIDE = 20
+        const val VERTEX_STRIDE = PackedGeometry.WORDS_PER_VERTEX * 4
 
         /** Fixed-point steps per content pixel in the stored spine offset. */
         const val OFFSET_SCALE = CanvasProjection.OFFSET_SCALE
 
         /** [v] content pixels as the fixed-point short the vertex format stores. */
-        fun quantizeOffset(v: Double): Short {
-            if (!v.isFinite()) return 0
-            return (v * OFFSET_SCALE).coerceIn(-32768.0, 32767.0).toInt().toShort()
-        }
+        fun quantizeOffset(v: Double): Short = PackedGeometry.quantizeOffset(v)
         const val INDEX_STRIDE = 4
 
         private const val INITIAL_VERTICES = 8192
         private const val INITIAL_INDICES = 24576
+        private const val PACK_VERTICES = 1024
 
         private const val SHARED_NAME = "xnotes-geometry"
 

@@ -1,13 +1,11 @@
 package com.xnotes.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -16,14 +14,20 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -38,7 +42,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -53,7 +56,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -61,7 +63,6 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.xnotes.R
 import com.xnotes.core.search.SearchHit
 import com.xnotes.core.search.SearchResults
@@ -107,61 +108,55 @@ private fun QueryField(editor: Editor) {
         runCatching { focus.requestFocus() }
         field = field.copy(selection = TextRange(0, field.text.length))
     }
-    Row(
-        Modifier
+    OutlinedTextField(
+        value = field,
+        onValueChange = {
+            field = it
+            editor.searchFor(it.text)
+        },
+        modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 8.dp, end = 8.dp, top = 2.dp, bottom = 2.dp)
-            .height(36.dp)
-            .clip(CircleShape)
-            .background(palette.surface.toComposeColor())
-            .border(1.dp, palette.border.toComposeColor(), CircleShape)
-            .padding(horizontal = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(XnotesIcons.search, null, tint = palette.textDim.toComposeColor(), modifier = Modifier.size(16.dp))
-        Spacer(Modifier.width(6.dp))
-        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
-            if (field.text.isEmpty()) {
-                Text(stringResource(R.string.find_in_note), color = palette.textDim.toComposeColor(), fontSize = 13.sp, maxLines = 1)
-            }
-            BasicTextField(
-                value = field,
-                onValueChange = {
-                    field = it
-                    editor.searchFor(it.text)
-                },
-                singleLine = true,
-                textStyle = TextStyle(color = palette.text.toComposeColor(), fontSize = 13.sp),
-                cursorBrush = SolidColor(palette.accent.toComposeColor()),
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = { editor.searchStep(forward = true) }),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .focusRequester(focus)
-                    .onPreviewKeyEvent { e ->
-                        // A keyboard's Enter steps on, Shift+Enter back.
-                        if (e.type == KeyEventType.KeyDown && (e.key == Key.Enter || e.key == Key.NumPadEnter)) {
-                            editor.searchStep(forward = !e.isShiftPressed)
-                            true
-                        } else {
-                            false
-                        }
-                    },
-            )
-        }
-        if (field.text.isNotEmpty()) {
-            Tooltip(stringResource(R.string.clear_search)) {
-                Icon(
-                    XnotesIcons.close, stringResource(R.string.clear_search),
-                    tint = palette.textDim.toComposeColor(),
-                    modifier = Modifier.size(16.dp).clip(CircleShape).clickable {
+            .padding(horizontal = 8.dp, vertical = 2.dp)
+            .focusRequester(focus)
+            .onPreviewKeyEvent { e ->
+                // A keyboard's Enter steps on, Shift+Enter back.
+                if (e.type == KeyEventType.KeyDown && (e.key == Key.Enter || e.key == Key.NumPadEnter)) {
+                    editor.searchStep(forward = !e.isShiftPressed)
+                    true
+                } else {
+                    false
+                }
+            },
+        singleLine = true,
+        textStyle = MaterialTheme.typography.bodyMedium.copy(color = palette.text.toComposeColor()),
+        placeholder = { Text(stringResource(R.string.find_in_note), style = MaterialTheme.typography.bodyMedium, maxLines = 1) },
+        leadingIcon = { Icon(XnotesIcons.search, null, modifier = Modifier.size(18.dp)) },
+        trailingIcon = if (field.text.isNotEmpty()) {
+            {
+                Tooltip(stringResource(R.string.clear_search)) {
+                    IconButton(onClick = {
                         field = TextFieldValue("")
                         editor.searchFor("")
-                    },
-                )
+                    }) {
+                        Icon(XnotesIcons.close, stringResource(R.string.clear_search), modifier = Modifier.size(18.dp))
+                    }
+                }
             }
-        }
-    }
+        } else {
+            null
+        },
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        keyboardActions = KeyboardActions(onSearch = { editor.searchStep(forward = true) }),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedTextColor = palette.text.toComposeColor(),
+            unfocusedTextColor = palette.text.toComposeColor(),
+            focusedContainerColor = palette.surface.toComposeColor(),
+            unfocusedContainerColor = palette.surface.toComposeColor(),
+            focusedBorderColor = palette.accent.toComposeColor(),
+            unfocusedBorderColor = palette.border.toComposeColor(),
+            cursorColor = palette.accent.toComposeColor(),
+        ),
+    )
 }
 
 @Composable
@@ -174,7 +169,7 @@ private fun QueryBar(editor: Editor, results: SearchResults?) {
         Text(
             position(editor, results),
             color = palette.textDim.toComposeColor(),
-            fontSize = 12.sp,
+            style = MaterialTheme.typography.bodySmall,
             textAlign = TextAlign.Center,
             maxLines = 1,
             modifier = Modifier.weight(1f),
@@ -211,7 +206,7 @@ private fun Toggle(label: String, description: String, on: Boolean, onToggle: ()
             Text(
                 label,
                 color = (if (on) palette.selectionForeground else palette.textDim).toComposeColor(),
-                fontSize = 12.sp,
+                style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.SemiBold,
             )
         }
@@ -232,15 +227,14 @@ private fun StepButton(icon: ImageVector, description: String, enabled: Boolean,
 @Composable
 private fun Progress(results: SearchResults?) {
     val palette = LocalPalette.current
-    Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp).height(2.dp)) {
-        if (results != null && !results.done && results.toRead > 0) {
-            Box(Modifier.fillMaxSize().clip(CircleShape).background(palette.border.toComposeColor()))
-            Box(
-                Modifier
-                    .fillMaxWidth(results.read.toFloat() / results.toRead)
-                    .fillMaxHeight()
-                    .clip(CircleShape)
-                    .background(palette.accent.toComposeColor()),
+    val active = results?.takeIf { !it.done && it.toRead > 0 }
+    Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp).height(4.dp)) {
+        if (active != null) {
+            LinearProgressIndicator(
+                progress = { (active.read.toFloat() / active.toRead).coerceIn(0f, 1f) },
+                modifier = Modifier.fillMaxSize(),
+                color = palette.accent.toComposeColor(),
+                trackColor = palette.border.toComposeColor(),
             )
         }
     }
@@ -264,7 +258,7 @@ private fun MatchList(editor: Editor, results: SearchResults, onPick: () -> Unit
         val i = rows.indexOfFirst { it === current }
         if (i >= 0 && listState.layoutInfo.visibleItemsInfo.none { it.index == i }) listState.scrollToItem((i - 1).coerceAtLeast(0))
     }
-    LazyColumn(Modifier.fillMaxSize(), state = listState) {
+    LazyColumn(Modifier.fillMaxSize().selectableGroup(), state = listState) {
         items(rows.size, key = { k -> rowKey(rows[k]) }) { k ->
             when (val row = rows[k]) {
                 is SearchHit -> MatchRow(row, row === current) {
@@ -274,7 +268,7 @@ private fun MatchList(editor: Editor, results: SearchResults, onPick: () -> Unit
                 else -> Text(
                     stringResource(R.string.page_n, (row as Int) + 1),
                     color = palette.textDim.toComposeColor(),
-                    fontSize = 11.sp,
+                    style = MaterialTheme.typography.labelSmall,
                     modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 2.dp),
                 )
             }
@@ -284,6 +278,7 @@ private fun MatchList(editor: Editor, results: SearchResults, onPick: () -> Unit
 
 private fun rowKey(row: Any): Any = if (row is SearchHit) "h${row.page}:${row.target}:${row.start}" else "p$row"
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun MatchRow(hit: SearchHit, current: Boolean, onClick: () -> Unit) {
     val palette = LocalPalette.current
@@ -294,19 +289,25 @@ private fun MatchRow(hit: SearchHit, current: Boolean, onClick: () -> Unit) {
             addStyle(SpanStyle(fontWeight = FontWeight.Bold), s.matchStart, s.matchEnd)
         }
     }
-    Text(
-        text,
-        color = (if (current) palette.selectionForeground else palette.text).toComposeColor(),
-        fontSize = 12.sp,
-        lineHeight = 16.sp,
-        maxLines = 2,
-        overflow = TextOverflow.Ellipsis,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 6.dp, vertical = 1.dp)
-            .clip(RoundedCornerShape(6.dp))
-            .background(if (current) palette.selectionBackground.toComposeColor() else Color.Transparent)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 6.dp, vertical = 5.dp),
-    )
+    ListItem(
+        selected = current,
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp),
+        shapes = ListItemDefaults.shapes(),
+        colors = ListItemDefaults.colors(
+            containerColor = Color.Transparent,
+            contentColor = palette.text.toComposeColor(),
+            selectedContainerColor = palette.selectionBackground.toComposeColor(),
+            selectedContentColor = palette.selectionForeground.toComposeColor(),
+        ),
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+    ) {
+        Text(
+            text,
+            color = (if (current) palette.selectionForeground else palette.text).toComposeColor(),
+            style = MaterialTheme.typography.bodySmall,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
 }

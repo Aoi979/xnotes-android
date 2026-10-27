@@ -3,12 +3,12 @@ package com.xnotes.ui
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -22,8 +22,10 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -35,7 +37,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -69,7 +70,13 @@ internal class PreviewActions(
  * file shows a preview" on, a tap shows it in a dialog.
  */
 @Composable
-internal fun FilePreview(b: ExplorerBody, e: BrowseEntry, where: String?, actions: PreviewActions, modifier: Modifier = Modifier) {
+internal fun FilePreview(
+    b: ExplorerBody,
+    e: BrowseEntry,
+    where: String?,
+    actions: PreviewActions,
+    modifier: Modifier = Modifier,
+) {
     val palette = LocalPalette.current
     val kind = b.kind(e)
     val pages = b.pages(e)
@@ -102,11 +109,11 @@ internal fun FilePreview(b: ExplorerBody, e: BrowseEntry, where: String?, action
                         PreviewButton(XnotesIcons.split, stringResource(R.string.open_side_by_side), filled = false, enabled = actions.openBeside != null) { actions.openBeside?.invoke() }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        ExplorerIcon(XnotesIcons.share, stringResource(R.string.share), palette.accent.toComposeColor(), onClick = actions.share)
-                        ExplorerIcon(XnotesIcons.pdfFile, stringResource(R.string.export_pdf), palette.accent.toComposeColor(), onClick = actions.exportPdf)
+                        ExplorerIcon(XnotesIcons.share, stringResource(R.string.share), palette.textDim.toComposeColor(), onClick = actions.share)
+                        ExplorerIcon(XnotesIcons.pdfFile, stringResource(R.string.export_pdf), palette.textDim.toComposeColor(), onClick = actions.exportPdf)
                         var colors by remember { mutableStateOf(false) }
                         Box {
-                            ExplorerIcon(XnotesIcons.palette, stringResource(R.string.colour_code), palette.accent.toComposeColor()) { colors = true }
+                            ExplorerIcon(XnotesIcons.palette, stringResource(R.string.colour_code), palette.textDim.toComposeColor()) { colors = true }
                             DropdownMenu(expanded = colors, onDismissRequest = { colors = false }) {
                                 ColorCodeMenuContent { c -> colors = false; actions.color(c) }
                             }
@@ -177,28 +184,14 @@ private fun DetailRow(label: String, value: String) {
 
 @Composable
 private fun PreviewButton(icon: ImageVector, label: String, filled: Boolean, enabled: Boolean = true, onClick: () -> Unit) {
-    val palette = LocalPalette.current
-    val shape = MaterialTheme.shapes.extraLarge
-    val fg = when {
-        !enabled -> palette.textDim.toComposeColor().copy(alpha = 0.5f)
-        filled -> palette.onAccent.toComposeColor()
-        else -> palette.text.toComposeColor()
+    val content: @Composable RowScope.() -> Unit = {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Icon(icon, null, modifier = Modifier.size(18.dp))
+            Text(label)
+        }
     }
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .height(44.dp)
-            .clip(shape)
-            .background(if (filled) palette.accent.toComposeColor() else Color.Transparent)
-            .then(if (filled) Modifier else Modifier.border(1.dp, palette.border.toComposeColor(), shape))
-            .clickable(enabled = enabled, onClick = onClick),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center,
-    ) {
-        Icon(icon, null, tint = if (filled || !enabled) fg else palette.accent.toComposeColor(), modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(8.dp))
-        Text(label, color = fg, fontSize = 14.5.sp, fontWeight = if (filled) FontWeight.Medium else FontWeight.Normal)
-    }
+    if (filled) Button(onClick = onClick, enabled = enabled, modifier = Modifier.fillMaxWidth(), content = content)
+    else OutlinedButton(onClick = onClick, enabled = enabled, modifier = Modifier.fillMaxWidth(), content = content)
 }
 
 /** [FilePreview] in a dialog, for "Tapping a file shows a preview". */

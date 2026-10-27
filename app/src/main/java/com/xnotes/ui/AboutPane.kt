@@ -16,6 +16,7 @@ import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
@@ -32,6 +33,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -46,10 +48,10 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
 import com.xnotes.R
 import com.xnotes.ui.icons.XnotesIcons
@@ -73,7 +75,7 @@ private const val MIN_FILL_MS = 120L
  * pre-filled (app version + device + OS for bug reports). Back from here returns to Home.
  */
 @Composable
-fun AboutPane() {
+fun AboutPane(modifier: Modifier = Modifier) {
     val palette = LocalPalette.current
     val ctx = LocalContext.current
 
@@ -95,7 +97,7 @@ fun AboutPane() {
     }
 
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+        modifier.fillMaxSize().verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Column(
@@ -106,21 +108,35 @@ fun AboutPane() {
                 Image(appIcon, "xnotes", modifier = Modifier.size(72.dp))
                 Spacer(Modifier.height(16.dp))
             }
-            Text("xnotes", color = palette.text.toComposeColor(), fontWeight = FontWeight.Bold, fontSize = 24.sp)
+            Text(
+                "xnotes",
+                color = palette.text.toComposeColor(),
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+            )
             Spacer(Modifier.height(5.dp))
             Text(
                 stringResource(R.string.app_tagline),
-                color = palette.textDim.toComposeColor(), fontSize = 13.sp, textAlign = TextAlign.Center,
+                color = palette.textDim.toComposeColor(),
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                stringResource(R.string.unofficial_build),
+                color = palette.accent.toComposeColor(),
+                style = MaterialTheme.typography.labelMedium,
+                textAlign = TextAlign.Center,
             )
             if (version.isNotEmpty()) {
                 Spacer(Modifier.height(8.dp))
                 // Tap to copy, so a version string is easy to paste into a report.
                 Tooltip(stringResource(R.string.copy_version)) {
                     Row(
-                        Modifier.clickable { copyVersion(ctx, version) }.padding(horizontal = 8.dp, vertical = 4.dp),
+                        Modifier.clickable(role = Role.Button) { copyVersion(ctx, version) }.padding(horizontal = 8.dp, vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(stringResource(R.string.version_n, version), color = palette.textDim.toComposeColor(), fontSize = 12.sp)
+                        Text(stringResource(R.string.version_n, version), color = palette.textDim.toComposeColor(), style = MaterialTheme.typography.bodySmall)
                         Spacer(Modifier.width(6.dp))
                         Icon(XnotesIcons.copy, stringResource(R.string.copy_version), tint = palette.textDim.toComposeColor(), modifier = Modifier.size(12.dp))
                     }
@@ -128,7 +144,7 @@ fun AboutPane() {
             }
 
             Spacer(Modifier.height(28.dp))
-            Text(stringResource(R.string.help_make_better), color = palette.text.toComposeColor(), fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            Text(stringResource(R.string.help_make_better), color = palette.text.toComposeColor(), style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(14.dp))
 
             // Three buttons, side by side; each fills with the selection container while pressed.
@@ -143,19 +159,22 @@ fun AboutPane() {
 
             Spacer(Modifier.height(26.dp))
             // Quiet, single-line growth nudge (a link, never a popup).
-            Row(
-                Modifier.clickable { open(REPO_URL) },
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(stringResource(R.string.enjoying_xnotes), color = palette.textDim.toComposeColor(), fontSize = 12.sp)
-                Text(stringResource(R.string.star_on_github), color = palette.accent.toComposeColor(), fontSize = 12.sp, fontWeight = FontWeight.Medium)
+            TextButton(onClick = { open(REPO_URL) }, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(stringResource(R.string.enjoying_xnotes), color = palette.textDim.toComposeColor(), style = MaterialTheme.typography.bodySmall)
+                    Text(stringResource(R.string.star_on_github), color = palette.accent.toComposeColor(), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
+                }
             }
 
             Spacer(Modifier.height(14.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.mit_license), color = palette.textDim.toComposeColor(), fontSize = 11.sp, modifier = Modifier.clickable { open(LICENSE_URL) })
-                Text("   ·   ", color = palette.textDim.toComposeColor(), fontSize = 11.sp)
-                Text("F-Droid", color = palette.textDim.toComposeColor(), fontSize = 11.sp, modifier = Modifier.clickable { open(FDROID_URL) })
+                TextButton(onClick = { open(LICENSE_URL) }, contentPadding = PaddingValues(horizontal = 4.dp)) {
+                    Text(stringResource(R.string.mit_license), style = MaterialTheme.typography.labelMedium)
+                }
+                Text("   ·   ", color = palette.textDim.toComposeColor(), style = MaterialTheme.typography.labelSmall)
+                TextButton(onClick = { open(FDROID_URL) }, contentPadding = PaddingValues(horizontal = 4.dp)) {
+                    Text("F-Droid", style = MaterialTheme.typography.labelMedium)
+                }
             }
         }
     }
@@ -199,7 +218,7 @@ private fun RowScope.AboutButton(icon: ImageVector, label: String, onClick: () -
             .clip(MaterialTheme.shapes.medium)
             .background(if (pressed) palette.selectionBackground.toComposeColor() else Color.Transparent)
             .border(1.dp, if (pressed) accent else palette.border.toComposeColor(), MaterialTheme.shapes.medium)
-            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .clickable(interactionSource = interaction, indication = null, role = Role.Button, onClick = onClick)
             .padding(vertical = 14.dp, horizontal = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
@@ -209,7 +228,8 @@ private fun RowScope.AboutButton(icon: ImageVector, label: String, onClick: () -
         Text(
             label,
             color = if (pressed) onAccent else palette.text.toComposeColor(),
-            fontSize = 12.sp, lineHeight = 14.sp, textAlign = TextAlign.Center,
+            style = MaterialTheme.typography.labelMedium,
+            textAlign = TextAlign.Center,
         )
     }
 }

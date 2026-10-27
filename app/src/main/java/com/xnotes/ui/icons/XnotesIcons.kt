@@ -20,6 +20,10 @@ import androidx.compose.ui.unit.dp
  */
 object XnotesIcons {
 
+    val cuteLayout by lazy { icon("M 3 3 H 15 V 15 H 3 Z M 7 3 V 15 M 11 3 V 15 M 3 7 H 15 M 3 11 H 15 M 9 19 H 21 M 18 16 L 21 19 L 18 22") }
+
+    val matrix by lazy { icon("M 7 3 H 3 V 21 H 7 M 17 3 H 21 V 21 H 17 M 9 8 H 10 M 14 8 H 15 M 9 16 H 10 M 14 16 H 15") }
+
     private fun icon(vararg pathData: String): ImageVector {
         val nodes = PathParser().parsePathString(pathData.joinToString(" ")).toNodes()
         return ImageVector.Builder(

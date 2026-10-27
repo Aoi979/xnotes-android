@@ -32,6 +32,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -132,16 +133,6 @@ internal fun RecordingChip(session: AudioRecording.Session) {
     val label = stringResource(R.string.recording_chip, time)
     val fg = (if (session.paused) m.error else m.onErrorContainer).toComposeColor()
     val shape = RoundedCornerShape(bar.circle / 2)
-    val pulse = androidx.compose.animation.core.rememberInfiniteTransition(label = "rec")
-    val dotAlpha by pulse.animateFloat(
-        initialValue = 1f,
-        targetValue = 0.3f,
-        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
-            androidx.compose.animation.core.tween<Float>(600),
-            androidx.compose.animation.core.RepeatMode.Reverse,
-        ),
-        label = "dot",
-    )
     Box(Modifier.chipAir(bar.vertical)) {
         val base = Modifier
             .clip(shape)
@@ -155,7 +146,7 @@ internal fun RecordingChip(session: AudioRecording.Session) {
             if (session.paused) {
                 PlayGlyph(true, fg, 11.dp)
             } else {
-                Box(Modifier.size(10.dp).clip(CircleShape).background(REC_RED.copy(alpha = dotAlpha)))
+                RecordingDot()
             }
         }
         if (bar.vertical) {
@@ -215,6 +206,22 @@ private fun Modifier.chipAir(vertical: Boolean) = padding(
 
 /** The recording dot's red, the colour every recorder uses for it, whatever the theme. */
 private val REC_RED = Color(0xFFFF5449)
+
+/** Mounted only while recording, and read during drawing so the chip does not recompose per frame. */
+@Composable
+private fun RecordingDot() {
+    val pulse = androidx.compose.animation.core.rememberInfiniteTransition(label = "rec")
+    val alpha by pulse.animateFloat(
+        initialValue = 1f,
+        targetValue = 0.3f,
+        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+            androidx.compose.animation.core.tween<Float>(600),
+            androidx.compose.animation.core.RepeatMode.Reverse,
+        ),
+        label = "dot",
+    )
+    Box(Modifier.size(10.dp).drawBehind { drawCircle(REC_RED.copy(alpha = alpha)) })
+}
 
 /** The microphone's level just now, as a row of bars that runs while the menu is open; flat while paused. */
 @Composable

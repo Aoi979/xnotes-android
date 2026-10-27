@@ -75,6 +75,8 @@ val ToolbarItem.labelRes: Int
         ToolbarItem.SCREENSHOT -> R.string.tool_screenshot
         ToolbarItem.WAND -> R.string.tool_wand
         ToolbarItem.SHAPE -> R.string.tool_shape
+        ToolbarItem.MATH -> R.string.canvas_math_tools
+        ToolbarItem.CUTE -> R.string.cute_title
         ToolbarItem.RULER -> R.string.tool_ruler
         ToolbarItem.TEXT -> R.string.tool_text
         ToolbarItem.TEXT_BOX -> R.string.tool_text_box

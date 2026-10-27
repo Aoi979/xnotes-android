@@ -110,6 +110,8 @@ data class EditingField(
     val rotation: Double = 0.0,
     /** Every line centred, as a shape's label sets. */
     val centred: Boolean = false,
+    /** Stable during geometry/style updates; a fresh identity each time editing begins. */
+    val sessionKey: Any = Unit,
 ) {
     /** The field's on-screen bounding box, turned corners and all. */
     fun screenBounds(): Rect {
@@ -481,6 +483,7 @@ class InteractionController(
     private var markupPressAt: Pt? = null
 
     // TEXT EDITING
+    private var textEditSession = Any()
     private var editingText: TextItem? = null
     private var editingIsNew = false
     private var editingOldText = ""
@@ -601,10 +604,12 @@ class InteractionController(
     fun onTouch(e: MotionEvent): Boolean {
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                searchTints?.cancelRevealMotion()
                 tapDown(e)
                 handleDown(e)
             }
             MotionEvent.ACTION_POINTER_DOWN -> {
+                searchTints?.cancelRevealMotion()
                 tapCandidate = false
                 handlePointerDown(e)
             }
@@ -618,6 +623,7 @@ class InteractionController(
                 tapUp(e)
             }
             MotionEvent.ACTION_CANCEL -> {
+                searchTints?.cancelRevealMotion()
                 tapCandidate = false
                 abortGesture()
                 requestRender()
@@ -2564,6 +2570,7 @@ class InteractionController(
 
     /** Open the in-place editor on [item] (a new draft, or an existing box being re-edited). */
     private fun startEditing(item: TextItem, pi: Int, isNew: Boolean) {
+        textEditSession = Any()
         editingText = item
         editingIsNew = isNew
         editingOldText = item.text
@@ -2621,6 +2628,7 @@ class InteractionController(
             rgba = item.rgba,
             text = item.text,
             rotation = state.rotationDeg.toDouble(),
+            sessionKey = textEditSession,
         )
     }
 
@@ -2996,6 +3004,7 @@ class InteractionController(
         clearSelection()
         val page = state.document.pages.getOrNull(pi) ?: return
         editingLabel = shape
+        textEditSession = Any()
         labelPageIndex = pi
         labelBefore = shape.label
         val l = shape.label ?: ShapeLabel("", ShapeLabel.styleFor(shape, textPointSize, textFace), textMeasurer).also { shape.label = it }
@@ -3050,6 +3059,7 @@ class InteractionController(
             text = l.text,
             rotation = state.rotationDeg + Math.toDegrees(shape.labelTurn),
             centred = true,
+            sessionKey = textEditSession,
         )
     }
 
