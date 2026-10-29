@@ -1,6 +1,7 @@
 package com.xnotes.platform
 
 import com.xnotes.canvas.ViewOverrides
+import com.xnotes.canvas.PdfNightMode
 import com.xnotes.canvas.ViewSettings
 import com.xnotes.canvas.ViewingMode
 import com.xnotes.core.model.Rgba
@@ -31,6 +32,9 @@ class ViewStateStoreTest {
             rotation = 90,
             scrollbar = true,
             freeMovement = true,
+            pdfNightMode = PdfNightMode.THEME,
+            pdfNightPaper = Rgba(20, 22, 24),
+            pdfNightInk = Rgba(230, 220, 210),
         )
         ViewStateStore(json).put("auth|doc1", 1.5, 12.0, 34.0, vo)
 
@@ -81,5 +85,16 @@ class ViewStateStoreTest {
         ViewStateStore(json).put("auth|doc", 1.0, 0.0, 0.0, ViewOverrides())
         val entry = json.read().getJSONObject("auth|doc")
         assertEquals(setOf("zoom", "scrollX", "scrollY"), entry.keys().asSequence().toSet())
+    }
+
+    @Test fun aNoteCanOptOutOfGlobalNightReadingAndLaterInheritItAgain() {
+        val json = store()
+        val states = ViewStateStore(json)
+        val defaults = ViewSettings(pdfNightMode = PdfNightMode.ON, pdfNightPaper = Rgba(12, 14, 16))
+        states.put("paper", 1.0, 0.0, 0.0, ViewOverrides(pdfNightMode = PdfNightMode.OFF))
+        val restored = ViewStateStore(json).get("paper")!!.overrides
+        assertEquals(PdfNightMode.OFF, restored.resolve(defaults).pdfNightMode)
+        assertEquals(defaults.pdfNightPaper, restored.resolve(defaults).pdfNightPaper)
+        assertEquals(PdfNightMode.ON, restored.copy(pdfNightMode = null).resolve(defaults).pdfNightMode)
     }
 }

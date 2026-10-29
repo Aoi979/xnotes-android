@@ -91,6 +91,8 @@ data class Preferences(
     val markdownInput: Boolean = true,
     /** Whether typing "/" at a word start opens the command menu. */
     val slashCommands: Boolean = true,
+    /** Text tool: fill the gap with empty paragraphs when tapping below the body; false clamps to its end. */
+    val tapBelowTextAddsLines: Boolean = true,
     /** Layouts the explorer header's switcher offers, in switcher order. */
     val switcherLayouts: List<ExplorerLayout> = ExplorerLayout.entries,
     val sidebarRecent: Boolean = true,
@@ -181,6 +183,7 @@ data class Preferences(
             lastCodeLanguage.takeIf { it.isNotEmpty() }?.let { put("last_code_language", it) }
             put("markdown_input", markdownInput)
             put("slash_commands", slashCommands)
+            put("tap_below_text_adds_lines", tapBelowTextAddsLines)
         }
         .put("switcher_layouts", org.json.JSONArray().apply { switcherLayouts.forEach { put(it.id) } })
         .put("sidebar_recent", sidebarRecent)
@@ -283,6 +286,7 @@ data class Preferences(
                 lastCodeLanguage = o.optString("last_code_language").lowercase().trim(),
                 markdownInput = o.optBoolean("markdown_input", true),
                 slashCommands = o.optBoolean("slash_commands", true),
+                tapBelowTextAddsLines = o.optBoolean("tap_below_text_adds_lines", true),
                 switcherLayouts = o.optJSONArray("switcher_layouts")?.let { a ->
                     (0 until a.length()).mapNotNull { ExplorerLayout.fromId(a.optString(it)) }.distinct()
                 } ?: ExplorerLayout.entries,

@@ -14,6 +14,14 @@ import org.junit.Test
 
 class SettingsTest {
 
+    @Test fun textBlankAreaPreferenceKeepsLegacyBehaviourAndPersistsBothChoices() {
+        assertTrue(Settings.fromJson(JSONObject()).prefs.tapBelowTextAddsLines)
+        for (fill in listOf(false, true)) {
+            val settings = Settings(prefs = Preferences(tapBelowTextAddsLines = fill))
+            assertEquals(fill, Settings.fromJson(settings.toJson()).prefs.tapBelowTextAddsLines)
+        }
+    }
+
     @Test fun emptyJsonYieldsDefaults() {
         val s = Settings.fromJson(JSONObject())
         assertEquals(15, s.toolbarColors.size)
@@ -34,6 +42,9 @@ class SettingsTest {
                 keepImages = true,
                 scrollbar = true,
                 freeMovement = true,
+                pdfNightMode = com.xnotes.canvas.PdfNightMode.THEME,
+                pdfNightPaper = Rgba(16, 20, 24),
+                pdfNightInk = Rgba(200, 195, 180),
             ),
         )
         val back = Settings.fromJson(original.toJson())
@@ -53,6 +64,19 @@ class SettingsTest {
         val back = Settings.fromJson(s.toJson())
         assertEquals(100, back.viewDefaults.invert)
         assertTrue(back.viewDefaults.keepImages)
+    }
+
+    @Test fun malformedNightReadingSettingsFallBackWithoutChangingLegacyFilters() {
+        val json = Settings().toJson().put("view_defaults", JSONObject()
+            .put("pdfNightMode", "unknown")
+            .put("pdfNightPaper", "bad-colour")
+            .put("pdfNightInk", "#zzzzzz")
+            .put("invert", 100))
+        val view = Settings.fromJson(json).viewDefaults
+        assertEquals(com.xnotes.canvas.PdfNightMode.OFF, view.pdfNightMode)
+        assertEquals(com.xnotes.canvas.ViewSettings.NIGHT_PAPER, view.pdfNightPaper)
+        assertEquals(com.xnotes.canvas.ViewSettings.NIGHT_INK, view.pdfNightInk)
+        assertEquals(100, view.invert)
     }
 
     @Test fun roundTripPreservesValues() {

@@ -125,6 +125,8 @@ class CanvasState(
      *  measure gesture speed in zoom- and device-independent dp (see [InteractionController]). */
     var devicePxPerDp: Double = 1.0
     var pageColorOverride: Rgba? = null
+    /** Display-only paper beneath PDF rasters (also while loading); blank note pages keep their style. */
+    var pdfPaperColor: Rgba? = null
     var didInitialFit: Boolean = false
 
     /** The view to install on the next layout for a just-opened document (null ⇒ fit width);
@@ -795,7 +797,8 @@ class CanvasState(
     /** Resolved page template key for [page] ([PageTemplates.NONE] when nothing in the chain sets one). */
     fun effectiveTemplate(page: Page): String = page.resolvedTemplate(document)
 
-    fun paperColor(page: Page): Rgba = effectivePageColor(page) ?: palette.paper
+    fun paperColor(page: Page): Rgba =
+        (if (page.pdfPage != null) pdfPaperColor else null) ?: effectivePageColor(page) ?: palette.paper
 
     /**
      * The pages the view may draw (and touch). Vertical mode shows everything the viewport

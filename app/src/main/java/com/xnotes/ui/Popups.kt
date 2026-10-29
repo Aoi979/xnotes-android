@@ -1,5 +1,10 @@
 package com.xnotes.ui
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -20,9 +25,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Checkbox
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -53,6 +60,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -61,6 +69,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -72,6 +81,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.PopupProperties
 import com.xnotes.R
 import com.xnotes.canvas.PdfColorFilter
+import com.xnotes.canvas.PdfNightMode
 import com.xnotes.canvas.ViewOverrides
 import com.xnotes.canvas.ViewSettings
 import com.xnotes.canvas.ViewingMode
@@ -690,6 +700,10 @@ fun ViewMenuPopup(editor: Editor, onDismiss: () -> Unit) {
     val defaults = editor.viewDefaults
     val overrides = editor.viewOverrides
     val vs = editor.viewSettings
+    val palette = LocalPalette.current
+    val nightActive = vs.pdfNightMode.isActive(palette.isDark)
+    var showNightColors by remember { mutableStateOf(false) }
+    var showManualFilters by remember { mutableStateOf(false) }
     // Same session-sticky rule as the styles popup's "Default for new notes" row.
     var showDefaultRow by remember { mutableStateOf(editor.viewSettings != editor.viewDefaults) }
     // Unchecking "Default for all notes" goes back to the defaults this popup opened with.
@@ -711,6 +725,7 @@ fun ViewMenuPopup(editor: Editor, onDismiss: () -> Unit) {
     fun setKeepImages(v: Boolean) = apply(overrides.copy(keepImages = v))
     fun setRotation(v: Int) = apply(overrides.copy(rotation = v))
     fun setScrollbar(v: Boolean) = apply(overrides.copy(scrollbar = v))
+    fun setNightMode(v: PdfNightMode) = apply(overrides.copy(pdfNightMode = v))
 
     DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
         Column(Modifier.width(300.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
@@ -733,14 +748,75 @@ fun ViewMenuPopup(editor: Editor, onDismiss: () -> Unit) {
             }
 
             Spacer(Modifier.size(10.dp))
-            StyleCaption(stringResource(R.string.caption_pdf_filters))
-            FilterSpinRow(stringResource(R.string.filter_contrast), vs.contrast, 0, 200) { setContrast(it) }
-            FilterSpinRow(stringResource(R.string.filter_invert), vs.invert, 0, 100) { setInvert(it) }
-            FilterSpinRow(stringResource(R.string.filter_brightness), vs.brightness, 0, 200) { setBrightness(it) }
-            FilterSpinRow(stringResource(R.string.filter_sepia), vs.sepia, 0, 200) { setSepia(it) }
-            FilterColorRow(stringResource(R.string.filter_multiply), vs.multiply, PdfColorFilter.MULTIPLY_OFF) { setMultiply(it) }
-            FilterColorRow(stringResource(R.string.filter_screen), vs.screen, PdfColorFilter.SCREEN_OFF) { setScreen(it) }
+            StyleCaption(stringResource(R.string.pdf_night_mode))
+            FlowRow(
+                modifier = Modifier.selectableGroup(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                listOf(
+                    PdfNightMode.OFF to stringResource(R.string.off),
+                    PdfNightMode.THEME to stringResource(R.string.pdf_night_theme),
+                    PdfNightMode.ON to stringResource(R.string.pdf_night_on),
+                ).forEach { (mode, label) ->
+                    ModeChoiceButton(label, vs.pdfNightMode == mode) { setNightMode(mode) }
+                }
+            }
+            PdfReadingHint(stringResource(R.string.pdf_night_help))
+            PdfControlsVisibility(overrides.pdfNightMode != null) {
+                TextButton(onClick = { apply(overrides.copy(pdfNightMode = null)) }) {
+                    Text(stringResource(R.string.pdf_night_use_default))
+                }
+            }
+            PdfControlsVisibility(vs.pdfNightMode != PdfNightMode.OFF) {
+                PdfDisclosureButton(
+                    label = stringResource(if (showNightColors) R.string.pdf_night_hide_colors else R.string.pdf_night_colors),
+                    expanded = showNightColors,
+                ) { showNightColors = !showNightColors }
+                PdfControlsVisibility(showNightColors) {
+                    NightColorRow(stringResource(R.string.pdf_night_paper), vs.pdfNightPaper) {
+                        apply(overrides.copy(pdfNightPaper = it.withAlpha(255)))
+                    }
+                    NightColorRow(stringResource(R.string.pdf_night_ink), vs.pdfNightInk) {
+                        apply(overrides.copy(pdfNightInk = it.withAlpha(255)))
+                    }
+                    NightReadingPreview(vs.pdfNightPaper, vs.pdfNightInk)
+                    TextButton(onClick = {
+                        apply(overrides.copy(pdfNightPaper = ViewSettings.NIGHT_PAPER, pdfNightInk = ViewSettings.NIGHT_INK))
+                    }) { Text(stringResource(R.string.pdf_night_reset_colors)) }
+                }
+            }
             ToggleRow(stringResource(R.string.caption_keep_images), vs.keepImages) { setKeepImages(it) }
+            PdfControlsVisibility(vs.keepImages) {
+                PdfReadingHint(stringResource(R.string.pdf_night_images_help))
+            }
+            AnimatedContent(
+                targetState = nightActive,
+                transitionSpec = {
+                    materialFadeThrough(smallSurface = true).using(
+                        SizeTransform { _, _ -> XnotesMotion.defaultSpatialSpec() },
+                    )
+                },
+                label = "PDF night/manual controls",
+            ) { active ->
+                Column(Modifier.fillMaxWidth()) {
+                    if (active) {
+                        PdfReadingHint(stringResource(R.string.pdf_night_filters_paused))
+                    } else {
+                        PdfDisclosureButton(
+                            label = stringResource(if (showManualFilters) R.string.pdf_hide_filters else R.string.caption_pdf_filters),
+                            expanded = showManualFilters,
+                        ) { showManualFilters = !showManualFilters }
+                        PdfControlsVisibility(showManualFilters) {
+                            FilterSpinRow(stringResource(R.string.filter_contrast), vs.contrast, 0, 200) { setContrast(it) }
+                            FilterSpinRow(stringResource(R.string.filter_invert), vs.invert, 0, 100) { setInvert(it) }
+                            FilterSpinRow(stringResource(R.string.filter_brightness), vs.brightness, 0, 200) { setBrightness(it) }
+                            FilterSpinRow(stringResource(R.string.filter_sepia), vs.sepia, 0, 200) { setSepia(it) }
+                            FilterColorRow(stringResource(R.string.filter_multiply), vs.multiply, PdfColorFilter.MULTIPLY_OFF) { setMultiply(it) }
+                            FilterColorRow(stringResource(R.string.filter_screen), vs.screen, PdfColorFilter.SCREEN_OFF) { setScreen(it) }
+                        }
+                    }
+                }
+            }
 
             Spacer(Modifier.size(10.dp))
             StyleCaption(stringResource(R.string.caption_rotate_degrees, vs.rotation))
@@ -754,7 +830,7 @@ fun ViewMenuPopup(editor: Editor, onDismiss: () -> Unit) {
             ToggleRow(stringResource(R.string.caption_scrollbar), vs.scrollbar) { setScrollbar(it) }
 
             Spacer(Modifier.size(8.dp))
-            if (showDefaultRow && overrides != ViewOverrides()) {
+            PdfControlsVisibility(showDefaultRow && overrides != ViewOverrides()) {
                 // The checkbox's 48dp touch frame insets the drawn box; pull the row back to align it.
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().offset(x = (-14).dp)) {
                     Checkbox(
@@ -775,6 +851,68 @@ fun ViewMenuPopup(editor: Editor, onDismiss: () -> Unit) {
                 TextButton(onClick = { apply(ViewOverrides()) }) { Text(stringResource(R.string.reset)) }
             }
         }
+    }
+}
+
+@Composable
+private fun PdfControlsVisibility(visible: Boolean, content: @Composable ColumnScope.() -> Unit) {
+    AnimatedVisibility(visible = visible, enter = materialExpandEnter(), exit = materialExpandExit()) {
+        Column(Modifier.fillMaxWidth(), content = content)
+    }
+}
+
+@Composable
+private fun PdfDisclosureButton(label: String, expanded: Boolean, onClick: () -> Unit) {
+    val rotation by animateFloatAsState(
+        targetValue = if (expanded) 180f else 0f,
+        animationSpec = XnotesMotion.fastSpatialSpec(),
+        label = "PDF disclosure arrow",
+    )
+    val description = stringResource(if (expanded) R.string.section_expanded else R.string.section_collapsed)
+    TextButton(onClick = onClick, modifier = Modifier.semantics { stateDescription = description }) {
+        Text(label, modifier = Modifier.weight(1f))
+        Spacer(Modifier.width(8.dp))
+        Icon(Icons.Filled.ExpandMore, contentDescription = null, modifier = Modifier.size(18.dp).rotate(rotation))
+    }
+}
+
+@Composable
+private fun PdfReadingHint(text: String) {
+    Text(text, color = LocalPalette.current.textDim.toComposeColor(), style = MaterialTheme.typography.bodySmall)
+}
+
+@Composable
+private fun NightReadingPreview(paper: Rgba, ink: Rgba) {
+    // Animate this small preview only; the PDF renderer receives the final palette once per edit.
+    val paperColor by animateColorAsState(paper.toComposeColor(), XnotesMotion.fastEffectsSpec(), label = "PDF preview paper")
+    val inkColor by animateColorAsState(ink.toComposeColor(), XnotesMotion.fastEffectsSpec(), label = "PDF preview text")
+    Text(
+        stringResource(R.string.pdf_night_preview),
+        color = inkColor,
+        style = MaterialTheme.typography.bodyMedium,
+        modifier = Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).background(paperColor).padding(12.dp),
+    )
+}
+
+@Composable
+private fun NightColorRow(label: String, value: Rgba, onChange: (Rgba) -> Unit) {
+    val palette = LocalPalette.current
+    var picking by remember { mutableStateOf(false) }
+    val pickerLabel = stringResource(R.string.pdf_night_choose_color, label, Rgba.toHex(value))
+    val swatch by animateColorAsState(value.toComposeColor(), XnotesMotion.fastEffectsSpec(), label = "PDF colour swatch")
+    Row(
+        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(label, color = palette.textDim.toComposeColor(), style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
+        Box {
+            IconButton(onClick = { picking = true }, modifier = Modifier.size(48.dp).semantics { contentDescription = pickerLabel }) {
+                Box(Modifier.size(24.dp).clip(CircleShape).background(swatch).border(1.dp, palette.border.toComposeColor(), CircleShape))
+            }
+            if (picking) PageColorGridPopup(value, { picking = false }, onChange)
+        }
+        Text(Rgba.toHex(value), color = palette.textDim.toComposeColor(), style = MaterialTheme.typography.bodySmall)
     }
 }
 

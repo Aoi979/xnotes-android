@@ -7,6 +7,15 @@ import java.io.DataOutputStream
 import java.util.Base64
 
 class CuteWorkbenchTest {
+    @Test fun mmaDerivedCopyCaptionsDoNotClaimUnusedThreadAndValueLayouts() {
+        val preset = CutePresets.all.first { it.spec.workspace == CuteWorkspace.COPY && it.spec.hardware.copySource == CuteCopySource.MMA_A }.spec
+        val evaluation = preset.copy(hardware = preset.hardware.copy(copyThreads = "unused-threads", copyValues = "unused-values")).evaluate()
+        val captions = evaluation.sourceLines()
+        assertTrue(captions.contains("make_tiled_copy_A"))
+        assertFalse(captions.any { "unused-threads" in it || "unused-values" in it })
+        assertTrue(captions.any { it.startsWith("AtomLayoutMNK =") })
+    }
+
     @Test fun everyMmaAtomAndOperandHasAnHonestView() {
         for (atom in CuteAtoms.mma) for (part in listOf("A","B","C")) {
             val e = CuteSpec(workspace = CuteWorkspace.MMA, hardware = CuteHardwareSpec(mmaAtom = atom.id, mmaThreads = "(1,1,1):(0,0,0)", operand = part)).evaluate()
@@ -23,6 +32,8 @@ class CuteWorkbenchTest {
             assertTrue(e.grid().spec.tv)
             assertTrue(e.grid().cell(0,0).owners.isNotEmpty())
             assertEquals(e.spec,CuteDiagram.decode(CuteDiagram.encode(e.spec)))
+            val suffix = when (part) { "S" -> "Src"; "D" -> "Dst"; else -> "Ref" }
+            assertTrue(e.sourceLines().contains("Copy_Atom::ValLayout$suffix"))
         }
     }
     @Test fun advancedSourcesAndPresetsSurviveMetadataRoundTrip() {

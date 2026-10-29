@@ -571,24 +571,27 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     }
 
     /** A batch is one undo step; CPU layout/SVG generation and file writes stay off the UI thread. */
-    suspend fun placeCuteDiagramSet(spec: com.xnotes.core.cute.CuteSpec): Boolean {
+    suspend fun placeCuteDiagramSet(
+        spec: com.xnotes.core.cute.CuteSpec,
+        prepared: List<com.xnotes.core.cute.CuteDiagramPlacement>? = null,
+    ): Boolean {
         val dir = imageDir ?: return false
         val destination = document
         val files = ArrayList<java.io.File>()
         var committed = false
         try {
-            val prepared = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                com.xnotes.core.cute.CuteDiagramSet.create(spec).map { placement ->
+            val assets = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                (prepared ?: com.xnotes.core.cute.CuteDiagramSet.create(spec)).map { placement ->
                     placement to writeCuteDiagram(placement.asset, dir).also { files.add(it.file) }
                 }
             }
             if (document !== destination) return false
             commitText()
-            val bounds = prepared.map { it.first.rect }.reduce(Rect::union)
+            val bounds = assets.map { it.first.rect }.reduce(Rect::union)
             val visible = viewport.visibleContentRect()
             val scale = minOf(visible.w * 0.78 / bounds.w, visible.h * 0.78 / bounds.h)
             val center = viewport.centerContent
-            val items = prepared.map { (placement, data) ->
+            val items = assets.map { (placement, data) ->
                 val rect = placement.rect
                 ImageItem(data, Rect(center.x + (rect.x - bounds.centerX) * scale,
                     center.y + (rect.y - bounds.centerY) * scale, rect.w * scale, rect.h * scale))

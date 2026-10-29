@@ -94,7 +94,11 @@ data class CuteEvaluation(val input: CuteLayout, val result: CuteLayout, val spe
             }
             CuteWorkspace.COPY -> {
                 add(CuteAtoms.copy(spec.hardware.copyAtom).cppType)
-                add("${spec.hardware.copySource}; T=${spec.hardware.copyThreads}; V=${spec.hardware.copyValues}")
+                add(when (spec.hardware.copySource) {
+                    CuteCopySource.TILED -> "make_tiled_copy; T=${spec.hardware.copyThreads}; V=${spec.hardware.copyValues}"
+                    CuteCopySource.ATOM -> "Copy_Atom::ValLayout${when (spec.hardware.copySide) { "S" -> "Src"; "D" -> "Dst"; else -> "Ref" }}"
+                    else -> "make_tiled_copy_${spec.hardware.copySource.name.takeLast(1)}"
+                })
                 if (spec.hardware.copySource.name.startsWith("MMA")) {
                     add(CuteAtoms.mma(spec.hardware.mmaAtom).cppType)
                     add("AtomLayoutMNK = ${spec.hardware.mmaThreads}; PermutationMNK = ${spec.hardware.permutation}")

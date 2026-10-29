@@ -60,6 +60,18 @@ object PdfColorFilter {
     /** Whether [m] turns black light, as an invert does: a multiply on the page then shows as a screen. */
     fun lightensBlack(m: FloatArray): Boolean = (m[4] + m[9] + m[14]) / 3f > 127.5f
 
+    /**
+     * Map white paper to [paper] and black ink to [ink], interpolating each channel so
+     * antialiased glyph edges remain smooth. Alpha passes through unchanged. Like inversion,
+     * this changes coloured graphics too; it deliberately does not classify PDF objects.
+     */
+    fun nightMatrix(paper: Rgba, ink: Rgba): FloatArray = floatArrayOf(
+        (paper.r - ink.r) / 255f, 0f, 0f, 0f, ink.r.toFloat(),
+        0f, (paper.g - ink.g) / 255f, 0f, 0f, ink.g.toFloat(),
+        0f, 0f, (paper.b - ink.b) / 255f, 0f, ink.b.toFloat(),
+        0f, 0f, 0f, 1f, 0f,
+    )
+
     /** Alpha is meaningless for a blend colour, so only the channels are compared. */
     private fun Rgba.rgbEquals(o: Rgba): Boolean = r == o.r && g == o.g && b == o.b
 
@@ -154,9 +166,21 @@ object PdfColorFilter {
 class PdfPageFilter private constructor(
     val pageMatrix: FloatArray?,
     val stampImages: Boolean,
+    /** Night paper for screen/preview margins and loading placeholders; null for manual filters. */
+    val paperColor: Rgba? = null,
 ) {
     companion object {
         val NONE = PdfPageFilter(null, false)
+
+        /** Resolve once for every screen render, viewport region, thumbnail and live markup. */
+        fun forView(settings: ViewSettings, dark: Boolean): PdfPageFilter = with(settings) {
+            if (pdfNightMode.isActive(dark)) {
+                // Replace, rather than stack on, the manual filters (especially invert).
+                PdfPageFilter(PdfColorFilter.nightMatrix(pdfNightPaper, pdfNightInk), keepImages, pdfNightPaper)
+            } else {
+                of(contrast, invert, brightness, sepia, multiply, screen, keepImages)
+            }
+        }
 
         fun of(
             contrast: Int,

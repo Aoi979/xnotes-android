@@ -78,6 +78,9 @@ class FlowTextController(
     /** Whether "/" opens the command menu (the text tool's Slash commands toggle). */
     var slashCommands = true
 
+    /** A blank-area tap may extend the body, or simply return to the existing text's end. */
+    var tapBelowTextAddsLines = true
+
     /** The colour typed ==text== highlights in: the one selected on the toolbar. */
     var highlight: () -> Rgba = { CharStyle.DEFAULT_HIGHLIGHT }
 
@@ -383,7 +386,7 @@ class FlowTextController(
     private fun tapBeyondEnd(content: Pt) {
         val (pi, local) = state.pagePointAt(content) ?: return
         val f = frame() ?: return
-        var count = f.emptyLinesToReach(pi, local.y, slotHeight())
+        var count = if (tapBelowTextAddsLines) f.emptyLinesToReach(pi, local.y, slotHeight()) else 0
         if (flow().paragraphs.isEmpty() && count <= 0) count = 1
         if (!active) startSession(FlowRange.caret(flow().endPos()))
         if (count <= 0) {

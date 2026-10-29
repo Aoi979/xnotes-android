@@ -11,6 +11,51 @@ import org.junit.Test
 
 class PdfColorFilterTest {
 
+    @Test fun nightMapsPaperInkAndAntialiasedEdgesToTheChosenPalette() {
+        val paper = Rgba(24, 26, 27)
+        val ink = Rgba(220, 222, 224)
+        val m = PdfColorFilter.nightMatrix(paper, ink)
+        val (wr, wg, wb) = apply(m, 255f, 255f, 255f)
+        val (br, bg, bb) = apply(m, 0f, 0f, 0f)
+        assertEquals(paper.r.toFloat(), wr, 1e-3f)
+        assertEquals(paper.g.toFloat(), wg, 1e-3f)
+        assertEquals(paper.b.toFloat(), wb, 1e-3f)
+        assertEquals(ink.r.toFloat(), br, 1e-3f)
+        assertEquals(ink.g.toFloat(), bg, 1e-3f)
+        assertEquals(ink.b.toFloat(), bb, 1e-3f)
+        val (mr, mg, mb) = apply(m, 127.5f, 127.5f, 127.5f)
+        assertEquals((paper.r + ink.r) / 2f, mr, 1e-3f)
+        assertEquals((paper.g + ink.g) / 2f, mg, 1e-3f)
+        assertEquals((paper.b + ink.b) / 2f, mb, 1e-3f)
+        assertTrue(PdfColorFilter.lightensBlack(m)) // live highlights need screen blending
+        assertEquals(77, PdfColorFilter.apply(m, Rgba(0, 0, 0, 77)).a)
+    }
+
+    @Test fun nightFollowsAppThemeOrCanBeForcedInALightTheme() {
+        val auto = ViewSettings(pdfNightMode = PdfNightMode.THEME)
+        assertSame(PdfPageFilter.NONE, PdfPageFilter.forView(auto, dark = false))
+        assertNotNull(PdfPageFilter.forView(auto, dark = true).pageMatrix)
+        assertNotNull(PdfPageFilter.forView(auto.copy(pdfNightMode = PdfNightMode.ON), dark = false).pageMatrix)
+        assertSame(PdfPageFilter.NONE, PdfPageFilter.forView(auto.copy(pdfNightMode = PdfNightMode.OFF), dark = true))
+    }
+
+    @Test fun nightReplacesManualFiltersAndTheyResumeInTheDaytime() {
+        val settings = ViewSettings(pdfNightMode = PdfNightMode.THEME, invert = 100, brightness = 60, sepia = 50)
+        val night = PdfPageFilter.forView(settings, dark = true)
+        val (r, g, b) = apply(night.pageMatrix!!, 255f, 255f, 255f)
+        assertEquals(settings.pdfNightPaper.r.toFloat(), r, 1e-3f)
+        assertEquals(settings.pdfNightPaper.g.toFloat(), g, 1e-3f)
+        assertEquals(settings.pdfNightPaper.b.toFloat(), b, 1e-3f)
+        val day = PdfPageFilter.forView(settings, dark = false)
+        org.junit.Assert.assertArrayEquals(PdfColorFilter.matrix(100, 100, 60, 50), day.pageMatrix, 1e-4f)
+    }
+
+    @Test fun nightCanFilterScansOrPreserveEmbeddedImages() {
+        val settings = ViewSettings(pdfNightMode = PdfNightMode.ON)
+        assertFalse(PdfPageFilter.forView(settings, dark = true).stampImages)
+        assertTrue(PdfPageFilter.forView(settings.copy(keepImages = true), dark = true).stampImages)
+    }
+
     /** Apply a 4x5 ColorMatrix-layout matrix to an rgb triple (alpha assumed 255, no clamping). */
     private fun apply(m: FloatArray, r: Float, g: Float, b: Float): Triple<Float, Float, Float> {
         fun row(i: Int) = m[i * 5] * r + m[i * 5 + 1] * g + m[i * 5 + 2] * b + m[i * 5 + 3] * 255f + m[i * 5 + 4]

@@ -1,6 +1,7 @@
 package com.xnotes.platform
 
 import com.xnotes.canvas.PdfColorFilter
+import com.xnotes.canvas.PdfNightMode
 import com.xnotes.canvas.ViewOverrides
 import com.xnotes.canvas.ViewSettings
 import com.xnotes.canvas.ViewingMode
@@ -27,6 +28,9 @@ internal object ViewSettingsJson {
         if (s.keepImages) put("keepImages", true)
         if (s.rotation != 0) put("rotation", s.rotation)
         if (s.scrollbar) put("scrollbar", true)
+        if (s.pdfNightMode != PdfNightMode.OFF) put("pdfNightMode", s.pdfNightMode.id)
+        if (s.pdfNightPaper != ViewSettings.NIGHT_PAPER) put("pdfNightPaper", Rgba.toHex(s.pdfNightPaper))
+        if (s.pdfNightInk != ViewSettings.NIGHT_INK) put("pdfNightInk", Rgba.toHex(s.pdfNightInk))
     }
 
     fun read(o: JSONObject): ViewSettings = ViewSettings(
@@ -42,6 +46,9 @@ internal object ViewSettingsJson {
         keepImages = o.optBoolean("keepImages", false),
         rotation = ViewSettings.normalizeRotation(o.optInt("rotation", 0)),
         scrollbar = o.optBoolean("scrollbar", false),
+        pdfNightMode = PdfNightMode.fromId(o.optString("pdfNightMode")),
+        pdfNightPaper = blendColor(o, "pdfNightPaper") ?: ViewSettings.NIGHT_PAPER,
+        pdfNightInk = blendColor(o, "pdfNightInk") ?: ViewSettings.NIGHT_INK,
     )
 }
 
@@ -72,6 +79,9 @@ internal object ViewOverridesJson {
         s.keepImages?.let { put("keepImages", it) }
         s.rotation?.let { put("rotation", it) }
         s.scrollbar?.let { put("scrollbar", it) }
+        s.pdfNightMode?.let { put("pdfNightMode", it.id) }
+        s.pdfNightPaper?.let { put("pdfNightPaper", Rgba.toHex(it)) }
+        s.pdfNightInk?.let { put("pdfNightInk", Rgba.toHex(it)) }
     }
 
     fun read(o: JSONObject): ViewOverrides = ViewOverrides(
@@ -87,5 +97,8 @@ internal object ViewOverridesJson {
         keepImages = if (o.has("keepImages")) o.optBoolean("keepImages", false) else null,
         rotation = if (o.has("rotation")) ViewSettings.normalizeRotation(o.optInt("rotation", 0)) else null,
         scrollbar = if (o.has("scrollbar")) o.optBoolean("scrollbar", false) else null,
+        pdfNightMode = if (o.has("pdfNightMode")) PdfNightMode.fromId(o.optString("pdfNightMode")) else null,
+        pdfNightPaper = blendColor(o, "pdfNightPaper"),
+        pdfNightInk = blendColor(o, "pdfNightInk"),
     )
 }

@@ -4,6 +4,7 @@ import android.graphics.Paint
 import android.graphics.Typeface
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -21,7 +22,11 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -62,12 +67,44 @@ internal fun CuteLayoutDialog(editor: InfiniteEditor, onDismiss: () -> Unit) {
     var saveError by remember { mutableStateOf(false) }
     var copied by remember { mutableStateOf(false) }
     var insertingSet by remember { mutableStateOf(false) }
+    val editing = editor.cuteEditTarget != null
+    val supportsSet = !editing && spec.workspace in listOf(CuteWorkspace.MMA, CuteWorkspace.COPY)
+    var insertSet by rememberSaveable(spec.workspace, editing) { mutableStateOf(false) }
+    var previewTab by rememberSaveable { mutableStateOf(false) }
+    val setResult = rememberCuteSetPreview(spec.takeIf { supportsSet && insertSet })
+    val setPreview = setResult?.getOrNull()
+    val activeError = if (supportsSet && insertSet) setResult?.exceptionOrNull() else error
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
     val palette = LocalPalette.current
     val screen = LocalConfiguration.current
     val tall = screen.screenHeightDp >= 650
-    val update: (CuteSpec) -> Unit = { editor.cuteDraft = it; saveError = false; copied = false }
+    val update: (CuteSpec) -> Unit = { if (!insertingSet) { editor.cuteDraft = it; saveError = false; copied = false } }
+    val output: @Composable (Int) -> Unit = { height ->
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (supportsSet) {
+                CuteInsertionScope(spec, insertSet) { insertSet = it; saveError = false }
+            } else if (editing) {
+                Text(stringResource(R.string.cute_update_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            AnimatedContent(
+                targetState = supportsSet && insertSet,
+                transitionSpec = { materialFadeThrough(smallSurface = true).using(SizeTransform { _, _ -> XnotesMotion.defaultSpatialSpec() }) },
+                label = "CuTe insertion preview mode",
+            ) { group ->
+                if (group) {
+                    val failure = setResult?.exceptionOrNull()
+                    if (failure != null) {
+                        CuteErrorCard(failure)
+                    } else {
+                        CuteSetPreviewCard(setPreview, height, spec.workspace)
+                    }
+                } else {
+                    CuteOutput(spec, evaluation, grid, error, height, update)
+                }
+            }
+        }
+    }
 
     Dialog(onDismissRequest = { if (!insertingSet) onDismiss() }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(
@@ -76,66 +113,92 @@ internal fun CuteLayoutDialog(editor: InfiniteEditor, onDismiss: () -> Unit) {
             shape = MaterialTheme.shapes.large,
             color = palette.menuBg.toComposeColor(),
         ) {
-            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(stringResource(R.string.cute_title), style = MaterialTheme.typography.titleLarge)
-                        Text(stringResource(R.string.cute_subtitle), style = MaterialTheme.typography.bodySmall)
-                    }
-                    CutePresetMenu { update(it.copy(rowStart = 0, columnStart = 0)) }
-                }
-                BoxWithConstraints(Modifier.weight(1f, fill = false)) {
-                    if (maxWidth >= 680.dp) {
-                        val controlWidth = if (maxWidth >= 900.dp) 320.dp else 260.dp
-                        Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                            Column(Modifier.width(controlWidth).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                CuteControls(spec, update)
-                                CuteHelp()
-                            }
-                            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                CuteOutput(spec, evaluation, grid, error, (screen.screenHeightDp - 350).coerceIn(240, 760), update)
+            BoxWithConstraints {
+                val wideLayout = maxWidth - 40.dp >= 680.dp
+                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(stringResource(R.string.cute_title), style = MaterialTheme.typography.titleLarge)
+                            Text(stringResource(R.string.cute_subtitle), style = MaterialTheme.typography.bodySmall)
+                        }
+                        CutePresetMenu(enabled = !insertingSet) { update(it.copy(rowStart = 0, columnStart = 0)) }
+                        Tooltip(stringResource(if (copied) R.string.cute_copied else R.string.cute_copy_cpp)) {
+                            IconButton(enabled = calculation.isSuccess && !insertingSet, onClick = {
+                                runCatching { spec.cpp() }.getOrNull()?.let { clipboard.setText(AnnotatedString(it)); copied = true }
+                            }) {
+                                Icon(if (copied) Icons.Filled.Check else Icons.Filled.ContentCopy,
+                                    contentDescription = stringResource(if (copied) R.string.cute_copied else R.string.cute_copy_cpp))
                             }
                         }
-                    } else {
-                        Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                            CuteControls(spec, update)
-                            CuteOutput(spec, evaluation, grid, error, if (tall) 310 else 220, update)
-                            CuteHelp()
-                        }
                     }
-                }
-                if (saveError) Text(stringResource(R.string.cute_save_error), color = MaterialTheme.colorScheme.error)
-                val setLabel = when (spec.workspace) {
-                    CuteWorkspace.MMA -> R.string.cute_insert_mma_set
-                    CuteWorkspace.COPY -> R.string.cute_insert_copy_set
-                    else -> null
-                }
-                if (setLabel != null) {
-                    OutlinedButton(
-                        enabled = evaluation != null && grid != null && !insertingSet,
-                        modifier = Modifier.fillMaxWidth(),
-                        onClick = {
-                            insertingSet = true
-                            saveError = false
-                            scope.launch {
-                                try {
-                                    if (editor.placeCuteDiagramSet(spec)) onDismiss() else saveError = true
-                                } finally {
-                                    insertingSet = false
+                    BoxWithConstraints(Modifier.weight(1f, fill = false)) {
+                        if (maxWidth >= 680.dp) {
+                            val controlWidth = if (maxWidth >= 900.dp) 320.dp else 260.dp
+                            Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                                Column(Modifier.width(controlWidth).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    CuteControls(spec, update, showViewSelector = !insertSet)
+                                    CuteHelp()
+                                }
+                                Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    output((screen.screenHeightDp - 350).coerceIn(240, 760))
                                 }
                             }
-                        },
-                    ) { Text(stringResource(setLabel)) }
-                }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(enabled = calculation.isSuccess && !insertingSet, onClick = {
-                        runCatching { spec.cpp() }.getOrNull()?.let { clipboard.setText(AnnotatedString(it)); copied = true }
-                    }) { Text(stringResource(if (copied) R.string.cute_copied else R.string.cute_copy_cpp)) }
-                    Spacer(Modifier.weight(1f))
-                    TextButton(enabled = !insertingSet, onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
-                    Button(enabled = evaluation != null && grid != null && !insertingSet, onClick = {
-                        if (evaluation != null && editor.placeCuteDiagram(evaluation)) onDismiss() else saveError = true
-                    }) { Text(stringResource(if (editor.cuteEditTarget == null) R.string.cute_insert else R.string.cute_update)) }
+                        } else {
+                            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                                    listOf(false to R.string.cute_parameters, true to R.string.cute_preview_tab).forEachIndexed { index, (preview, label) ->
+                                        SegmentedButton(selected = previewTab == preview, onClick = { previewTab = preview },
+                                            shape = SegmentedButtonDefaults.itemShape(index, 2), label = { Text(stringResource(label)) })
+                                    }
+                                }
+                                AnimatedContent(targetState = previewTab, transitionSpec = { materialFadeThrough(smallSurface = true) }, label = "CuTe parameters/preview") { preview ->
+                                    Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                                        if (preview) output(if (tall) 360 else 240) else {
+                                            CuteControls(spec, update, showViewSelector = !insertSet)
+                                            CuteHelp()
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (saveError) Text(stringResource(R.string.cute_save_error), color = MaterialTheme.colorScheme.error)
+                    if (activeError != null && !wideLayout && !previewTab) {
+                        Text(cuteErrorMessage(activeError), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall, maxLines = 2)
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Spacer(Modifier.weight(1f))
+                        TextButton(enabled = !insertingSet, onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+                        Button(
+                            enabled = !insertingSet && (if (supportsSet && insertSet) setPreview != null else evaluation != null && grid != null),
+                            onClick = {
+                                if (supportsSet && insertSet && setPreview != null) {
+                                    insertingSet = true
+                                    saveError = false
+                                    scope.launch {
+                                        try {
+                                            if (editor.placeCuteDiagramSet(spec, setPreview.placements)) onDismiss() else saveError = true
+                                        } finally {
+                                            insertingSet = false
+                                        }
+                                    }
+                                } else if (evaluation != null && editor.placeCuteDiagram(evaluation)) onDismiss() else saveError = true
+                            },
+                        ) {
+                            if (insertingSet) {
+                                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                                Spacer(Modifier.width(8.dp))
+                            }
+                            Text(when {
+                                insertingSet -> stringResource(R.string.cute_inserting)
+                                editing -> stringResource(R.string.cute_update)
+                                insertSet && supportsSet -> stringResource(if (spec.workspace == CuteWorkspace.MMA) R.string.cute_insert_mma_group else R.string.cute_insert_copy_group)
+                                spec.workspace == CuteWorkspace.MMA -> stringResource(R.string.cute_insert_current, spec.hardware.operand)
+                                spec.workspace == CuteWorkspace.COPY -> stringResource(R.string.cute_insert_current, spec.hardware.copySide)
+                                else -> stringResource(R.string.cute_insert)
+                            })
+                        }
+                    }
                 }
             }
         }
@@ -143,10 +206,10 @@ internal fun CuteLayoutDialog(editor: InfiniteEditor, onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun CutePresetMenu(onSelect: (CuteSpec) -> Unit) {
+private fun CutePresetMenu(enabled: Boolean = true, onSelect: (CuteSpec) -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box {
-        TextButton(onClick = { open = true }) { Text(stringResource(R.string.cute_examples)) }
+        TextButton(enabled = enabled, onClick = { open = true }) { Text(stringResource(R.string.cute_examples)) }
         DropdownMenu(open, { open = false }) {
             CutePresets.all.forEach { preset ->
                 DropdownMenuItem(text = { Text(preset.name) }, onClick = { onSelect(preset.spec); open = false })
@@ -156,8 +219,28 @@ private fun CutePresetMenu(onSelect: (CuteSpec) -> Unit) {
 }
 
 @Composable
-private fun CuteControls(spec: CuteSpec, update: (CuteSpec) -> Unit) {
-    CuteWorkspaceControls(spec, update)
+private fun CuteControls(spec: CuteSpec, update: (CuteSpec) -> Unit, showViewSelector: Boolean) {
+    CuteWorkspaceControls(spec, update, showViewSelector)
+}
+
+@Composable
+private fun CuteInsertionScope(spec: CuteSpec, insertSet: Boolean, onChange: (Boolean) -> Unit) {
+    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerLow) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(stringResource(R.string.cute_insert_scope), style = MaterialTheme.typography.titleSmall)
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                listOf(false to R.string.cute_scope_current, true to R.string.cute_scope_set).forEachIndexed { index, (all, label) ->
+                    SegmentedButton(selected = insertSet == all, onClick = { onChange(all) },
+                        shape = SegmentedButtonDefaults.itemShape(index, 2), label = { Text(stringResource(label)) })
+                }
+            }
+            Text(
+                if (insertSet) stringResource(if (spec.workspace == CuteWorkspace.MMA) R.string.cute_mma_set_preview else R.string.cute_copy_set_preview)
+                else stringResource(R.string.cute_scope_current_hint, if (spec.workspace == CuteWorkspace.MMA) spec.hardware.operand else spec.hardware.copySide),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
 }
 
 @Composable
@@ -256,9 +339,7 @@ private fun CuteOutput(spec: CuteSpec, evaluation: CuteEvaluation?, grid: CuteGr
         }
     }
     if (error != null) {
-        Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.errorContainer) {
-            Text(cuteErrorMessage(error), Modifier.fillMaxWidth().padding(16.dp), color = MaterialTheme.colorScheme.onErrorContainer, style = MaterialTheme.typography.bodyMedium)
-        }
+        CuteErrorCard(error)
     }
     if (grid != null && evaluation != null) {
         if (grid.aliases > 0 || grid.holes > 0) {
@@ -278,6 +359,13 @@ private fun CuteOutput(spec: CuteSpec, evaluation: CuteEvaluation?, grid: CuteGr
             }
         }
         Text(stringResource(R.string.cute_reedit_hint), style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+@Composable
+private fun CuteErrorCard(error: Throwable) {
+    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.errorContainer) {
+        Text(cuteErrorMessage(error), Modifier.fillMaxWidth().padding(16.dp), color = MaterialTheme.colorScheme.onErrorContainer, style = MaterialTheme.typography.bodyMedium)
     }
 }
 

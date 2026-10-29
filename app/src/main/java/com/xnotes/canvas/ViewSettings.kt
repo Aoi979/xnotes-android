@@ -18,6 +18,17 @@ enum class ViewingMode(val id: String) {
     }
 }
 
+/** Display-only PDF night reading; THEME follows the app's resolved appearance, including OLED. */
+enum class PdfNightMode(val id: String) {
+    OFF("off"), THEME("theme"), ON("on");
+
+    fun isActive(dark: Boolean): Boolean = this == ON || (this == THEME && dark)
+
+    companion object {
+        fun fromId(id: String?): PdfNightMode = entries.firstOrNull { it.id == id } ?: OFF
+    }
+}
+
 /**
  * A complete set of View-menu settings. Used in two roles: the app-wide **defaults**
  * (saved via the menu's "Default for all notes" checkbox, persisted in
@@ -46,8 +57,14 @@ data class ViewSettings(
     val rotation: Int = 0,
     /** Whether the canvas-area scrollbar is shown (off by default). */
     val scrollbar: Boolean = false,
+    /** Night reading replaces the manual PDF filters while active; it never rewrites the PDF. */
+    val pdfNightMode: PdfNightMode = PdfNightMode.OFF,
+    val pdfNightPaper: Rgba = NIGHT_PAPER,
+    val pdfNightInk: Rgba = NIGHT_INK,
 ) {
     companion object {
+        val NIGHT_PAPER = Rgba(24, 26, 27)
+        val NIGHT_INK = Rgba(220, 222, 224)
         val ROTATIONS = listOf(0, 90, 180, 270)
 
         /** Snap any degree value onto the supported quarter turns. */
@@ -75,6 +92,9 @@ data class ViewOverrides(
     val keepImages: Boolean? = null,
     val rotation: Int? = null,
     val scrollbar: Boolean? = null,
+    val pdfNightMode: PdfNightMode? = null,
+    val pdfNightPaper: Rgba? = null,
+    val pdfNightInk: Rgba? = null,
 ) {
     /** The note's effective settings: every null falls back to [defaults]. */
     fun resolve(defaults: ViewSettings): ViewSettings = ViewSettings(
@@ -90,5 +110,8 @@ data class ViewOverrides(
         keepImages = keepImages ?: defaults.keepImages,
         rotation = rotation ?: defaults.rotation,
         scrollbar = scrollbar ?: defaults.scrollbar,
+        pdfNightMode = pdfNightMode ?: defaults.pdfNightMode,
+        pdfNightPaper = pdfNightPaper ?: defaults.pdfNightPaper,
+        pdfNightInk = pdfNightInk ?: defaults.pdfNightInk,
     )
 }

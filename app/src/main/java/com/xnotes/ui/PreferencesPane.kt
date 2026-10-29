@@ -304,6 +304,17 @@ fun PreferencesPane(
 
             preferenceSection("input", R.string.pref_input)
 
+            preferenceItem("text-blank-tap") {
+                SwitchRow(stringResource(R.string.pref_tap_below_text), prefs.tapBelowTextAddsLines) {
+                    update(prefs.copy(tapBelowTextAddsLines = it))
+                }
+                Text(
+                    stringResource(R.string.pref_tap_below_text_help),
+                    color = palette.textDim.toComposeColor(),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+
             item(key = "finger-draws", contentType = "setting") {
                 SwitchRow(stringResource(R.string.pref_finger_draws), prefs.fingerDraws) { update(prefs.copy(fingerDraws = it)) }
             }

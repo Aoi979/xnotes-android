@@ -7,26 +7,37 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.xnotes.R
 import com.xnotes.core.cute.*
 
 @Composable
-internal fun CuteWorkspaceControls(spec: CuteSpec, update: (CuteSpec) -> Unit) {
+internal fun CuteWorkspaceControls(spec: CuteSpec, update: (CuteSpec) -> Unit, showViewSelector: Boolean = true) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(stringResource(R.string.cute_workspace_label), style = MaterialTheme.typography.labelLarge)
-        ExpressiveChoiceGroup(
-            options = CuteWorkspace.entries.map { it to stringResource(it.labelRes()) },
-            selected = spec.workspace,
-            onSelect = { update(spec.copy(workspace = it, showInput = false, rowStart = 0, columnStart = 0, transposeDiagram = false)) },
-        )
+        FlowRow(Modifier.selectableGroup(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            CuteWorkspace.entries.forEach { workspace ->
+                ModeChoiceButton(stringResource(workspace.labelRes()), spec.workspace == workspace) {
+                    update(spec.copy(workspace = workspace, showInput = false, rowStart = 0, columnStart = 0, transposeDiagram = false))
+                }
+            }
+        }
         AnimatedContent(
             targetState = spec.workspace,
             transitionSpec = { materialFadeThrough(smallSurface = true) },
@@ -34,8 +45,8 @@ internal fun CuteWorkspaceControls(spec: CuteSpec, update: (CuteSpec) -> Unit) {
         ) { workspace ->
             when (workspace) {
                 CuteWorkspace.ALGEBRA -> CuteAlgebraControls(spec, update)
-                CuteWorkspace.MMA -> CuteSettingsCard { CuteMmaControls(spec.hardware) { update(spec.copy(hardware = it, rowStart = 0, columnStart = 0, transposeDiagram = spec.transposeDiagram && it.operand == spec.hardware.operand)) } }
-                CuteWorkspace.COPY -> CuteSettingsCard { CuteCopyControls(spec.hardware) { update(spec.copy(hardware = it, rowStart = 0, columnStart = 0)) } }
+                CuteWorkspace.MMA -> CuteMmaControls(spec.hardware, showOperand = showViewSelector) { update(spec.copy(hardware = it, rowStart = 0, columnStart = 0, transposeDiagram = spec.transposeDiagram && it.operand == spec.hardware.operand)) }
+                CuteWorkspace.COPY -> CuteCopyControls(spec.hardware, showSide = showViewSelector) { update(spec.copy(hardware = it, rowStart = 0, columnStart = 0)) }
                 CuteWorkspace.TMA -> CuteSettingsCard { CuteTmaControls(spec.tma) { update(spec.copy(tma = it, rowStart = 0, columnStart = 0)) } }
             }
         }
@@ -68,17 +79,34 @@ internal fun CuteText(label: String, value: String, onChange: (String) -> Unit) 
 
 @Composable
 internal fun CuteChoices(options: List<String>, selected: String, onChange: (String) -> Unit) {
-    ExpressiveChoiceGroup(options.map { it to it }, selected, onChange)
+    FlowRow(Modifier.selectableGroup(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        options.forEach { option -> ModeChoiceButton(option, selected == option) { onChange(option) } }
+    }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CuteSelect(label: String, value: String, options: List<Pair<String,String>>, onChange: (String) -> Unit) {
     var open by remember { mutableStateOf(false) }
-    Text(label, style = MaterialTheme.typography.labelLarge)
-    Box {
-        OutlinedButton({ open = true }, Modifier.fillMaxWidth()) { Text("$value ▾", fontFamily = FontFamily.Monospace) }
-        DropdownMenu(open, { open = false }, Modifier.widthIn(max = 520.dp).heightIn(max = 480.dp)) {
-            options.forEach { (id, name) -> DropdownMenuItem(text = { Text(name, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall) }, onClick = { onChange(id); open = false }) }
+    ExposedDropdownMenuBox(expanded = open, onExpandedChange = { open = it }) {
+        OutlinedTextField(
+            value = options.firstOrNull { it.first == value }?.second ?: value,
+            onValueChange = {}, readOnly = true,
+            modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
+            label = { Text(label) },
+            textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+            maxLines = 3,
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = open) },
+        )
+        ExposedDropdownMenu(expanded = open, onDismissRequest = { open = false }, modifier = Modifier.heightIn(max = 400.dp)) {
+            options.forEach { (id, name) ->
+                DropdownMenuItem(
+                    text = { Text(name, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall) },
+                    modifier = Modifier.semantics { selected = id == value },
+                    leadingIcon = if (id == value) ({ Icon(Icons.Filled.Check, null) }) else null,
+                    onClick = { onChange(id); open = false },
+                )
+            }
         }
     }
 }
@@ -86,9 +114,9 @@ private fun CuteSelect(label: String, value: String, options: List<Pair<String,S
 @Composable
 internal fun CuteMajorControls(value: String, onChange: (String) -> Unit) {
     val shape = runCatching { CuteParser.intTree(value.substringBefore(':')) }.getOrNull()
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         listOf(false,true).forEach { right ->
-            OutlinedButton(enabled = shape != null, onClick = { shape?.let { runCatching { CuteLayout.compact(it,right).toString() }.getOrNull()?.let(onChange) } }) {
+            OutlinedButton(enabled = shape != null, contentPadding = PaddingValues(horizontal = 12.dp), onClick = { shape?.let { runCatching { CuteLayout.compact(it,right).toString() }.getOrNull()?.let(onChange) } }) {
                 Text(if (right) "LayoutRight" else "LayoutLeft", style = MaterialTheme.typography.labelMedium)
             }
         }
@@ -146,40 +174,88 @@ private fun CuteInteger(label: String, value: Long, modifier: Modifier = Modifie
 
 @Composable
 private fun CuteMmaControls(h: CuteHardwareSpec, showOperand: Boolean = true, update: (CuteHardwareSpec) -> Unit) {
-    CuteSelect("MMA Atom", h.mmaAtom, CuteAtoms.mma.map { it.id to it.cppType }) { update(h.copy(mmaAtom = it)) }
-    CuteText("AtomLayoutMNK · Shape:Stride", h.mmaThreads) { update(h.copy(mmaThreads = it)) }
-    CuteMajorControls(h.mmaThreads) { update(h.copy(mmaThreads = it)) }
-    CuteText("PermutationMNK · (_,_,_)", h.permutation) { update(h.copy(permutation = it)) }
-    Text(stringResource(R.string.cute_mma_hint), style = MaterialTheme.typography.bodySmall)
-    if (showOperand) CuteChoices(listOf("A","B","C"), h.operand) { update(h.copy(operand = it)) }
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        if (showOperand) CuteSettingsCard {
+            Text(stringResource(R.string.cute_operand_view), style = MaterialTheme.typography.titleSmall)
+            CuteChoices(listOf("A", "B", "C"), h.operand) { update(h.copy(operand = it)) }
+            Text("A · M×K    B · N×K    C · M×N", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        CuteSettingsCard {
+            Text(stringResource(R.string.cute_mma_configuration), style = MaterialTheme.typography.titleSmall)
+            CuteSelect("MMA Atom", h.mmaAtom, CuteAtoms.mma.map { it.id to it.cppType }) { update(h.copy(mmaAtom = it)) }
+            CuteText("AtomLayoutMNK · Shape:Stride", h.mmaThreads) { update(h.copy(mmaThreads = it)) }
+            CuteMajorControls(h.mmaThreads) { update(h.copy(mmaThreads = it)) }
+            CuteAdvancedSection(stringResource(R.string.cute_permutation_settings), h.permutation != "(_,_,_)") {
+                CuteText("PermutationMNK · (_,_,_)", h.permutation) { update(h.copy(permutation = it)) }
+                Text(stringResource(R.string.cute_mma_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
 }
 
 @Composable
-private fun CuteCopyControls(h: CuteHardwareSpec, update: (CuteHardwareSpec) -> Unit) {
-    CuteSelect("Copy Atom", h.copyAtom, CuteAtoms.copy.map { it.id to it.cppType }) { update(h.copy(copyAtom = it)) }
-    CuteSelect(stringResource(R.string.cute_copy_source), h.copySource.name, CuteCopySource.entries.map { it.name to when (it) {
-        CuteCopySource.ATOM -> "Copy_Atom::ValLayout"
-        CuteCopySource.TILED -> "make_tiled_copy"
-        else -> "make_tiled_copy_${it.name.takeLast(1)}"
-    } }) { update(h.copy(copySource = CuteCopySource.valueOf(it), copySide = if (h.copySide == "R") "D" else h.copySide)) }
-    when (h.copySource) {
-        CuteCopySource.ATOM -> Text(stringResource(R.string.cute_atom_elements), style = MaterialTheme.typography.bodySmall)
-        CuteCopySource.TILED -> {
-            CuteText("ThrLayout · Shape:Stride", h.copyThreads) { update(h.copy(copyThreads = it)) }
-            CuteMajorControls(h.copyThreads) { update(h.copy(copyThreads = it)) }
-            CuteText("ValLayout · Shape:Stride", h.copyValues) { update(h.copy(copyValues = it)) }
-            CuteMajorControls(h.copyValues) { update(h.copy(copyValues = it)) }
-            Text(stringResource(R.string.cute_copy_hint), style = MaterialTheme.typography.bodySmall)
+private fun CuteCopyControls(h: CuteHardwareSpec, showSide: Boolean, update: (CuteHardwareSpec) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        if (showSide) CuteSettingsCard {
+            Text(stringResource(R.string.cute_operand_view), style = MaterialTheme.typography.titleSmall)
+            CuteChoices(if (h.copySource == CuteCopySource.ATOM) listOf("S", "D", "R") else listOf("S", "D"), h.copySide) { update(h.copy(copySide = it)) }
+            Text(stringResource(R.string.cute_copy_sides), style = MaterialTheme.typography.bodySmall)
         }
-        else -> CuteMmaControls(h, showOperand = false, update)
+        CuteSettingsCard {
+            Text(stringResource(R.string.cute_copy_configuration), style = MaterialTheme.typography.titleSmall)
+            CuteSelect(stringResource(R.string.cute_copy_source), h.copySource.name, CuteCopySource.entries.map { it.name to it.constructionName() }) {
+                val source = CuteCopySource.valueOf(it)
+                update(h.copy(copySource = source,
+                    copySide = if (source != CuteCopySource.ATOM && h.copySide == "R") "D" else h.copySide,
+                    retile = h.retile && source != CuteCopySource.ATOM))
+            }
+            CuteSelect("Copy Atom", h.copyAtom, CuteAtoms.copy.map { it.id to it.cppType }) { update(h.copy(copyAtom = it)) }
+        }
+        AnimatedContent(targetState = h.copySource, transitionSpec = { materialFadeThrough(smallSurface = true) }, label = "CuTe copy construction") { source ->
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                when (source) {
+                    CuteCopySource.ATOM -> Text(stringResource(R.string.cute_atom_elements), style = MaterialTheme.typography.bodySmall)
+                    CuteCopySource.TILED -> CuteSettingsCard {
+                        CuteText("ThrLayout · Shape:Stride", h.copyThreads) { update(h.copy(copyThreads = it)) }
+                        CuteMajorControls(h.copyThreads) { update(h.copy(copyThreads = it)) }
+                        CuteText("ValLayout · Shape:Stride", h.copyValues) { update(h.copy(copyValues = it)) }
+                        CuteMajorControls(h.copyValues) { update(h.copy(copyValues = it)) }
+                        Text(stringResource(R.string.cute_copy_hint), style = MaterialTheme.typography.bodySmall)
+                    }
+                    else -> CuteMmaControls(h, showOperand = false, update)
+                }
+            }
+        }
+        if (h.copySource != CuteCopySource.ATOM) CuteSettingsCard {
+            CuteChoices(listOf("TV Layout", "retile_S/D"), if (h.retile) "retile_S/D" else "TV Layout") { update(h.copy(retile = it == "retile_S/D")) }
+            AnimatedVisibility(visible = h.retile, enter = materialExpandEnter(), exit = materialExpandExit()) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    CuteText("Fragment (V,M,N,…) · Shape:Stride", h.fragment) { update(h.copy(fragment = it)) }
+                    Text(stringResource(R.string.cute_retile_hint), style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
     }
-    CuteChoices(if (h.copySource == CuteCopySource.ATOM) listOf("S","D","R") else listOf("S","D"), h.copySide) { update(h.copy(copySide = it)) }
-    Text(stringResource(R.string.cute_copy_sides), style = MaterialTheme.typography.bodySmall)
-    if (h.copySource != CuteCopySource.ATOM) {
-        CuteChoices(listOf("TV Layout","retile_S/D"), if (h.retile) "retile_S/D" else "TV Layout") { update(h.copy(retile = it == "retile_S/D")) }
-        if (h.retile) {
-            CuteText("Fragment (V,M,N,…) · Shape:Stride", h.fragment) { update(h.copy(fragment = it)) }
-            Text(stringResource(R.string.cute_retile_hint), style = MaterialTheme.typography.bodySmall)
+}
+
+private fun CuteCopySource.constructionName(): String = when (this) {
+    CuteCopySource.ATOM -> "Copy_Atom::ValLayout"
+    CuteCopySource.TILED -> "make_tiled_copy"
+    else -> "make_tiled_copy_${name.takeLast(1)}"
+}
+
+@Composable
+private fun CuteAdvancedSection(label: String, initiallyExpanded: Boolean, content: @Composable ColumnScope.() -> Unit) {
+    var expanded by remember { mutableStateOf(initiallyExpanded) }
+    val angle by animateFloatAsState(if (expanded) 180f else 0f, XnotesMotion.fastSpatialSpec(), label = "CuTe advanced arrow")
+    val description = stringResource(if (expanded) R.string.section_expanded else R.string.section_collapsed)
+    Column {
+        TextButton(onClick = { expanded = !expanded }, modifier = Modifier.fillMaxWidth().semantics { stateDescription = description }) {
+            Text(label, Modifier.weight(1f))
+            Icon(Icons.Filled.ExpandMore, null, Modifier.size(20.dp).rotate(angle))
+        }
+        AnimatedVisibility(visible = expanded, enter = materialExpandEnter(), exit = materialExpandExit()) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp), content = content)
         }
     }
 }
@@ -210,7 +286,7 @@ internal fun CuteHardwareOutput(e: CuteEvaluation, update: (CuteSpec) -> Unit) {
         CuteWorkspace.TMA -> stringResource(R.string.cute_workspace_tma)
         CuteWorkspace.ALGEBRA -> return
     }
-    var showDetails by remember(e.spec) { mutableStateOf(false) }
+    var showDetails by remember(e.spec.workspace) { mutableStateOf(false) }
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
@@ -224,32 +300,6 @@ internal fun CuteHardwareOutput(e: CuteEvaluation, update: (CuteSpec) -> Unit) {
                 }
                 Text(stringResource(R.string.cute_result), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
             }
-            when (e.spec.workspace) {
-                CuteWorkspace.MMA -> {
-                    CuteOutputLine("Atom", CuteAtoms.mma(e.spec.hardware.mmaAtom).cppType)
-                    CuteOutputLine("AtomLayoutMNK", e.spec.hardware.mmaThreads)
-                    CuteOutputLine("PermutationMNK", e.spec.hardware.permutation)
-                    CuteOutputLine("Operand", e.spec.hardware.operand)
-                }
-                CuteWorkspace.COPY -> {
-                    CuteOutputLine("Copy_Atom", CuteAtoms.copy(e.spec.hardware.copyAtom).cppType)
-                    CuteOutputLine(stringResource(R.string.cute_copy_source), e.spec.hardware.copySource.name)
-                    if (e.spec.hardware.copySource != CuteCopySource.ATOM) {
-                        CuteOutputLine("T / V", "${e.spec.hardware.copyThreads} / ${e.spec.hardware.copyValues}")
-                    }
-                    CuteOutputLine("Side", e.spec.hardware.copySide)
-                    if (e.spec.hardware.retile) CuteOutputLine("Fragment", e.spec.hardware.fragment)
-                }
-                CuteWorkspace.TMA -> {
-                    CuteOutputLine("GMEM", e.spec.tma.globalShape)
-                    CuteOutputLine("Tile", e.spec.tma.box)
-                    CuteOutputLine(stringResource(R.string.cute_tma_origin), e.spec.tma.origin)
-                    CuteOutputLine(stringResource(R.string.cute_tma_strides), e.spec.tma.globalStrides.ifBlank { "—" })
-                }
-                CuteWorkspace.ALGEBRA -> Unit
-            }
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            CuteOutputLine("R", e.result.toString())
             if (h?.descriptor == true) {
                 Text(stringResource(R.string.cute_descriptor_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -283,14 +333,46 @@ internal fun CuteHardwareOutput(e: CuteEvaluation, update: (CuteSpec) -> Unit) {
                 exit = shrinkVertically(animationSpec = XnotesMotion.fastSpatialSpec()) + fadeOut(animationSpec = XnotesMotion.fastEffectsSpec()),
             ) {
                 SelectionContainer {
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        e.sourceLines().filterNot { it.startsWith("R =") }.forEach {
-                            Text(it, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
-                        }
-                    }
+                    CuteHardwareDetails(e)
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun CuteHardwareDetails(e: CuteEvaluation) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        when (e.spec.workspace) {
+            CuteWorkspace.MMA -> {
+                CuteOutputLine("Atom", CuteAtoms.mma(e.spec.hardware.mmaAtom).cppType)
+                CuteOutputLine("AtomLayoutMNK", e.spec.hardware.mmaThreads)
+                CuteOutputLine("PermutationMNK", e.spec.hardware.permutation)
+                CuteOutputLine("Operand", e.spec.hardware.operand)
+            }
+            CuteWorkspace.COPY -> {
+                CuteOutputLine("Copy_Atom", CuteAtoms.copy(e.spec.hardware.copyAtom).cppType)
+                CuteOutputLine(stringResource(R.string.cute_copy_source), e.spec.hardware.copySource.constructionName())
+                if (e.spec.hardware.copySource == CuteCopySource.TILED) {
+                    CuteOutputLine("T / V", "${e.spec.hardware.copyThreads} / ${e.spec.hardware.copyValues}")
+                } else if (e.spec.hardware.copySource != CuteCopySource.ATOM) {
+                    CuteOutputLine("MMA Atom", CuteAtoms.mma(e.spec.hardware.mmaAtom).cppType)
+                    CuteOutputLine("AtomLayoutMNK", e.spec.hardware.mmaThreads)
+                    CuteOutputLine("PermutationMNK", e.spec.hardware.permutation)
+                }
+                CuteOutputLine("Side", e.spec.hardware.copySide)
+                if (e.spec.hardware.retile && e.spec.hardware.copySource != CuteCopySource.ATOM) CuteOutputLine("Fragment", e.spec.hardware.fragment)
+            }
+            CuteWorkspace.TMA -> {
+                CuteOutputLine("GMEM", e.spec.tma.globalShape)
+                CuteOutputLine("Tile", e.spec.tma.box)
+                CuteOutputLine(stringResource(R.string.cute_tma_origin), e.spec.tma.origin)
+                CuteOutputLine(stringResource(R.string.cute_tma_strides), e.spec.tma.globalStrides.ifBlank { "—" })
+            }
+            CuteWorkspace.ALGEBRA -> Unit
+        }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        CuteOutputLine("R", e.result.toString())
     }
 }
 

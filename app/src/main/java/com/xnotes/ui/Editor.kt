@@ -2626,19 +2626,14 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         pad.frontBuffering = !p.disableFrontBuffering
         infiniteOrNull?.pad?.frontBuffering = !p.disableFrontBuffering
         state.pageColorOverride = if (p.defaultTemplate == "color") p.pageColor else null
-        val theme = "$palette|${state.pageColorOverride}"
-        if (thumbnailTheme != theme) {
-            thumbnailTheme = theme
-            thumbnailGeneration = thumbCache.useTheme(theme)
-            synchronized(noteThumbs) { noteThumbs.evictAll() }
-            synchronized(pageThumbs) { pageThumbs.evictAll() }
-            thumbnailVersion++
-        }
+        updatePdfPaperColor()
+        refreshThumbnailTheme()
         controller.fingerDraws = p.fingerDraws
         controller.zoomLockPan = p.zoomLockPan
         controller.detectShapes = p.detectShapes
         flowText.markdownInput = p.markdownInput
         flowText.slashCommands = p.slashCommands
+        flowText.tapBelowTextAddsLines = p.tapBelowTextAddsLines
         flowText.highlight = { toolbarInk() }
         controller.penButtonTool = if (p.penButtonTool == "none") null else (Tool.fromId(p.penButtonTool) ?: Tool.ERASER)
         controller.penButtonHover = p.penButtonHover
@@ -2650,6 +2645,21 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             .coerceAtLeast(state.minZoom)
         state.clampZoomToLimits()
         state.relayout()
+    }
+
+    private fun updatePdfPaperColor() {
+        state.pdfPaperColor = viewSettings.pdfNightPaper.takeIf { viewSettings.pdfNightMode.isActive(palette.isDark) }
+    }
+
+    /** View defaults also change closed notes' previews, including cached files on disk. */
+    private fun refreshThumbnailTheme() {
+        val theme = "$palette|${state.pageColorOverride}|$viewDefaults"
+        if (thumbnailTheme == theme) return
+        thumbnailTheme = theme
+        thumbnailGeneration = thumbCache.useTheme(theme)
+        synchronized(noteThumbs) { noteThumbs.evictAll() }
+        synchronized(pageThumbs) { pageThumbs.evictAll() }
+        thumbnailVersion++
     }
 
     /** Whether typed markdown markers convert; the text tool's config popup toggles it. */
@@ -3590,7 +3600,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         // Otherwise the page as shown spans the tile's width: centred top to bottom when it's wider than tall.
         val whole = renderDocPage(doc, 0, (side * shownH / shownW).roundToInt().coerceAtLeast(1), filter, rotation) ?: return null
         val tile = com.xnotes.platform.AndroidRasterSurface.create(side, side)
-        tile.fill(page.resolvedPageColor(doc, state.pageColorOverride) ?: state.palette.paper)
+        tile.fill(thumbnailPaper(doc, page, filter))
         android.graphics.Canvas(tile.bitmap).drawBitmap(whole, 0f, if (shownW > shownH) (side - whole.height) / 2f else 0f, null)
         whole.recycle()
         return tile.bitmap
@@ -3607,6 +3617,10 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         return paintDocPage(doc, index, w, h, scale, rotation, filter)
     }
 
+    private fun thumbnailPaper(doc: Document, page: Page, filter: com.xnotes.canvas.PdfPageFilter): Rgba =
+        (if (page.pdfPage != null) filter.paperColor else null)
+            ?: page.resolvedPageColor(doc, state.pageColorOverride) ?: state.palette.paper
+
     /** Page [index] painted from its top-left corner at [scale] onto a [w]×[h] surface, then turned by [rotation]. */
     private fun paintDocPage(
         doc: Document, index: Int, w: Int, h: Int, scale: Double, rotation: Int, filter: com.xnotes.canvas.PdfPageFilter,
@@ -3615,7 +3629,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val cover = exportFootprint(doc, page)
         val surface = com.xnotes.platform.AndroidRasterSurface.create(w, h)
         // Resolve the paper colour against this note's own document/page style (not the open note's).
-        surface.fill(page.resolvedPageColor(doc, state.pageColorOverride) ?: state.palette.paper)
+        surface.fill(thumbnailPaper(doc, page, filter))
         val r = surface.renderer()
         r.scale(scale, scale)
         r.translate(-cover.left, -cover.top)
@@ -5114,10 +5128,13 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      *  has no override of its own. */
     fun updateViewDefaults(new: com.xnotes.canvas.ViewSettings) {
         if (viewDefaults == new) return
-        viewDefaults = new
         settings = settings.copy(viewDefaults = new)
         settingsRepo.save(settings)
-        applyResolvedViewSettings()
+        for (editor in listOfNotNull(this, sibling)) {
+            editor.viewDefaults = new
+            editor.applyResolvedViewSettings()
+            editor.refreshThumbnailTheme()
+        }
     }
 
     /** Update the open note's View-menu overrides and persist them. */
@@ -5146,6 +5163,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     /** Push a settings change into the canvas/caches; each View-menu feature reacts here. */
     private fun onViewSettingsChanged(prev: com.xnotes.canvas.ViewSettings, new: com.xnotes.canvas.ViewSettings) {
         state.freeMovement = new.freeMovement
+        updatePdfPaperColor()
         if (prev.mode != new.mode || prev.rotation != new.rotation || prev.verticalScroll != new.verticalScroll) {
             // Re-group / re-orient / re-flow the pages, keep the reader on the same page, and
             // re-fit a fit-width view to the new row width (a Double spread is about twice as
@@ -5184,7 +5202,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val filterChanged = prev.contrast != new.contrast || prev.invert != new.invert ||
             prev.brightness != new.brightness || prev.sepia != new.sepia ||
             prev.multiply != new.multiply || prev.screen != new.screen ||
-            prev.keepImages != new.keepImages
+            prev.keepImages != new.keepImages || prev.pdfNightMode != new.pdfNightMode ||
+            prev.pdfNightPaper != new.pdfNightPaper || prev.pdfNightInk != new.pdfNightInk
         if (filterChanged) {
             state.invalidateAllBackgrounds()
             if (evictPdfPageThumbnails()) pdfThumbTick++
@@ -5198,10 +5217,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     private fun pdfPageFilter(): com.xnotes.canvas.PdfPageFilter = pdfPageFilterFor(viewSettings)
 
     private fun pdfPageFilterFor(vs: com.xnotes.canvas.ViewSettings): com.xnotes.canvas.PdfPageFilter =
-        com.xnotes.canvas.PdfPageFilter.of(
-            vs.contrast, vs.invert, vs.brightness, vs.sepia, vs.multiply, vs.screen,
-            keepImages = vs.keepImages,
-        )
+        com.xnotes.canvas.PdfPageFilter.forView(vs, palette.isDark)
 
     /** A note's resolved View-menu settings by URI: the open note's live value, a folder note's
      *  remembered overrides over the global defaults, else the defaults themselves. */
