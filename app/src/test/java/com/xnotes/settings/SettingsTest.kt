@@ -508,6 +508,23 @@ class SettingsTest {
         assertFalse(Preferences().toJson().has("toolbar_floating"))
     }
 
+    @Test fun collapsingToolbarsAreIndependentAndPreserveLegacyLook() {
+        for (notes in listOf(false, true)) for (canvas in listOf(false, true)) {
+            val look = ToolbarLook(ToolbarPosition.RIGHT, ToolbarSize.COMPACT, floating = true,
+                collapsingNotes = notes, collapsingCanvas = canvas)
+            val prefs = Preferences(toolbarLook = look)
+            assertEquals(prefs, Preferences.fromJson(prefs.toJson()))
+        }
+        val old = JSONObject().put("toolbar_floating", true).put("toolbar_size", "compact")
+        val look = Preferences.fromJson(old).toolbarLook
+        assertTrue(look.floating)
+        assertEquals(ToolbarSize.COMPACT, look.size)
+        assertFalse(look.collapsingNotes)
+        assertFalse(look.collapsingCanvas)
+        assertFalse(Preferences().toJson().has("toolbar_collapsing_notes"))
+        assertFalse(Preferences().toJson().has("toolbar_collapsing_canvas"))
+    }
+
     @Test fun defaultPresetsRoundTripInEveryMode() {
         for (mode in MaterialColourMode.entries) {
             val p = Preferences(materialMode = mode)

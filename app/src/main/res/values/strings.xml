@@ -1128,6 +1128,14 @@
     <string name="pref_toolbar_style">Style</string>
     <string name="toolbar_docked">Docked</string>
     <string name="toolbar_floating">Floating</string>
+    <string name="pref_toolbar_collapsing">M3 floating toolbar</string>
+    <string name="pref_toolbar_collapsing_notes">Use in notes</string>
+    <string name="pref_toolbar_collapsing_canvas">Use on canvases</string>
+    <string name="pref_toolbar_collapsing_help">Floats over the selected edge with standard Material sizing. Notes collapse while moving forward and expand on return; canvases collapse on panning and expand when you reverse. Undo and the expand button stay available. Overrides Style and Size for the enabled editor. Stays expanded with touch exploration.</string>
+    <string name="toolbar_expand">Expand toolbar</string>
+    <string name="toolbar_collapse">Collapse toolbar</string>
+    <string name="toolbar_expanded">Toolbar expanded</string>
+    <string name="toolbar_collapsed">Toolbar collapsed</string>
     <string name="pref_toolbar_position">Position</string>
     <string name="pref_toolbar_size">Size</string>
     <string name="toolbar_size_compact">Compact</string>

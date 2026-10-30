@@ -331,34 +331,38 @@ private fun CuteDimension(label: String, value: Int, modifier: Modifier, onChang
 
 @Composable
 private fun CuteOutput(spec: CuteSpec, evaluation: CuteEvaluation?, grid: CuteGrid?, error: Throwable?, height: Int, update: (CuteSpec) -> Unit) {
-    if (evaluation != null) {
-        if (spec.workspace == CuteWorkspace.ALGEBRA) {
-            CuteAlgebraResultCard(evaluation, spec, update)
-        } else {
-            CuteHardwareOutput(evaluation, update)
-        }
-    }
-    if (error != null) {
-        CuteErrorCard(error)
-    }
-    if (grid != null && evaluation != null) {
-        if (grid.aliases > 0 || grid.holes > 0) {
-            Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.secondaryContainer) {
-                Text(stringResource(R.string.cute_mapping_gaps, grid.aliases, grid.holes), Modifier.fillMaxWidth().padding(12.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
+    // AnimatedContent overlays its direct children. Keep the complete output in one layout node
+    // so the result, preview, cell trace and editing hint each receive their own vertical space.
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        if (evaluation != null) {
+            if (spec.workspace == CuteWorkspace.ALGEBRA) {
+                CuteAlgebraResultCard(evaluation, spec, update)
+            } else {
+                CuteHardwareOutput(evaluation, update)
             }
         }
-        if (!grid.spec.tv && evaluation.shown.rank > 2) Text(stringResource(R.string.cute_grouped_axes), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        CuteGridPreview(grid, evaluation, height)
-        if (grid.windowed) {
-            Text(stringResource(R.string.cute_window, grid.rowStart, grid.rowEnd - 1, grid.columnStart, grid.columnEnd - 1), style = MaterialTheme.typography.bodySmall)
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                TextButton(enabled = grid.rowStart > 0, onClick = { update(spec.copy(rowStart = maxOf(0, grid.rowStart - CuteGrid.WINDOW))) }) { Text("M −") }
-                TextButton(enabled = grid.rowEnd < grid.rows, onClick = { update(spec.copy(rowStart = grid.rowEnd)) }) { Text("M +") }
-                TextButton(enabled = grid.columnStart > 0, onClick = { update(spec.copy(columnStart = maxOf(0, grid.columnStart - CuteGrid.WINDOW))) }) { Text("N −") }
-                TextButton(enabled = grid.columnEnd < grid.columns, onClick = { update(spec.copy(columnStart = grid.columnEnd)) }) { Text("N +") }
-            }
+        if (error != null) {
+            CuteErrorCard(error)
         }
-        Text(stringResource(R.string.cute_reedit_hint), style = MaterialTheme.typography.bodySmall)
+        if (grid != null && evaluation != null) {
+            if (grid.aliases > 0 || grid.holes > 0) {
+                Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.secondaryContainer) {
+                    Text(stringResource(R.string.cute_mapping_gaps, grid.aliases, grid.holes), Modifier.fillMaxWidth().padding(12.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                }
+            }
+            if (!grid.spec.tv && evaluation.shown.rank > 2) Text(stringResource(R.string.cute_grouped_axes), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            CuteGridPreview(grid, evaluation, height)
+            if (grid.windowed) {
+                Text(stringResource(R.string.cute_window, grid.rowStart, grid.rowEnd - 1, grid.columnStart, grid.columnEnd - 1), style = MaterialTheme.typography.bodySmall)
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(enabled = grid.rowStart > 0, onClick = { update(spec.copy(rowStart = maxOf(0, grid.rowStart - CuteGrid.WINDOW))) }) { Text("M −") }
+                    TextButton(enabled = grid.rowEnd < grid.rows, onClick = { update(spec.copy(rowStart = grid.rowEnd)) }) { Text("M +") }
+                    TextButton(enabled = grid.columnStart > 0, onClick = { update(spec.copy(columnStart = maxOf(0, grid.columnStart - CuteGrid.WINDOW))) }) { Text("N −") }
+                    TextButton(enabled = grid.columnEnd < grid.columns, onClick = { update(spec.copy(columnStart = grid.columnEnd)) }) { Text("N +") }
+                }
+            }
+            Text(stringResource(R.string.cute_reedit_hint), style = MaterialTheme.typography.bodySmall)
+        }
     }
 }
 
@@ -443,6 +447,13 @@ private fun CuteMetric(label: String, value: String, modifier: Modifier = Modifi
 
 @Composable
 private fun CuteGridPreview(grid: CuteGrid, evaluation: CuteEvaluation, height: Int) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        CuteGridPreviewContent(grid, evaluation, height)
+    }
+}
+
+@Composable
+private fun ColumnScope.CuteGridPreviewContent(grid: CuteGrid, evaluation: CuteEvaluation, height: Int) {
     var selected by remember(grid) { mutableStateOf<CuteCell?>(null) }
     val shownCell = key(grid) { rememberExitContent(selected) }
     var zoom by remember(grid) { mutableFloatStateOf(1f) }

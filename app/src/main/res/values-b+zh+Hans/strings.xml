@@ -1100,4 +1100,12 @@
     <string name="cute_show_details">展开计算细节</string>
     <string name="cute_hide_details">收起计算细节</string>
     <string name="cute_cell_trace_title">选中单元格的映射过程</string>
+    <string name="pref_toolbar_collapsing">M3 悬浮收缩工具栏</string>
+    <string name="pref_toolbar_collapsing_notes">在 Note 中使用</string>
+    <string name="pref_toolbar_collapsing_canvas">在 Canvas 中使用</string>
+    <string name="pref_toolbar_collapsing_help">使用 Material 标准尺寸，悬浮于所选边缘。Note 前进时收起、回退时展开；Canvas 平移时收起、反向移动时展开。保留撤销和展开按钮。启用的编辑器会使用此样式与尺寸；触摸探索模式下保持展开。</string>
+    <string name="toolbar_expand">展开工具栏</string>
+    <string name="toolbar_collapse">收起工具栏</string>
+    <string name="toolbar_expanded">工具栏已展开</string>
+    <string name="toolbar_collapsed">工具栏已收起</string>
 </resources>

@@ -1426,7 +1426,9 @@ private fun EditorPane(
                         onRecordAudio = { actions.onRecordAudio(editor) },
                     )
                 }
-                ToolbarAround(bar, onCover = canvas::setToolbarCover) { floatingBar ->
+                ToolbarAround(bar, onCover = canvas::setToolbarCover,
+                    adaptiveState = canvas.toolbarMotion.takeIf { com.xnotes.ui.LocalToolbarLook.current.collapsingCanvas },
+                ) { floatingBar ->
                     Box(modifier = Modifier.fillMaxSize().clipToBounds()) {
                         AndroidView(
                             factory = { detached(canvas.surfaces) },
@@ -1462,7 +1464,9 @@ private fun EditorPane(
                         onRecordAudio = { actions.onRecordAudio(editor) },
                     )
                 }
-                ToolbarAround(bar, onCover = editor::setToolbarCover) { floatingBar ->
+                ToolbarAround(bar, onCover = editor::setToolbarCover,
+                    adaptiveState = editor.toolbarMotion.takeIf { com.xnotes.ui.LocalToolbarLook.current.collapsingNotes },
+                ) { floatingBar ->
                     Row(modifier = Modifier.fillMaxSize()) {
                         if (editor.sidebarVisible) {
                             com.xnotes.ui.SidePanel(

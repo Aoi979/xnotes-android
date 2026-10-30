@@ -1180,6 +1180,7 @@ fun SelectConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
  * in Highlight mode, how deep it goes. A mark takes the toolbar's active ink colour.
  */
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 fun MarkupToolPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
     val base = remember { editor.toolConfig(Tool.MARKUP) }
     var mode by remember { mutableStateOf(base.markupMode) }
@@ -1190,7 +1191,11 @@ fun MarkupToolPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
     DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
         Column(Modifier.width(250.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
             PopupTitle(stringResource(R.string.tool_markup))
-            Row(Modifier.selectableGroup(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            FlowRow(
+                modifier = Modifier.fillMaxWidth().selectableGroup(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
                 MarkupMode.entries.forEach { m ->
                     IconChoiceButton(markupIcon(m), stringResource(m.labelRes), selected = mode == m) { mode = m; emit() }
                 }

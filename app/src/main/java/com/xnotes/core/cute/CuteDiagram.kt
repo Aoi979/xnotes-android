@@ -298,7 +298,7 @@ object CuteDiagram {
                 }
             }
             for (n in grid.columnStart until grid.columnEnd) text(left + (n - grid.columnStart) * cell + cell / 2, top - 12, n.toString(), 16, true)
-            text(20, height - 16, "CuTe Layout algebra | $REFERENCE", 12)
+            text(20, height - 16, "CuTe Layout algebra | CUTLASS", 12)
             append("</svg>")
         }
         return CuteDiagramAsset(e.spec, svg, width, height, Rect(left.toDouble(), top.toDouble(),

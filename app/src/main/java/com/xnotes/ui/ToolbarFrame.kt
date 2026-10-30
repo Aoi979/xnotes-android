@@ -75,6 +75,8 @@ private val FLOAT_MARGIN = 8.dp
 /** What a floating bar covers of the canvas, for overlays that must stay out from under it. */
 internal val LocalToolbarCover = compositionLocalOf { PaddingValues(0.dp) }
 
+internal val LocalAdaptiveToolbar = staticCompositionLocalOf<ToolbarMotion?> { null }
+
 /**
  * Lays a pane out with its [bar] along the edge Preferences chose and [content] in the rest. A
  * floating bar is handed to [content] to lay over its canvas instead, and [onCover] learns how many
@@ -84,11 +86,12 @@ internal val LocalToolbarCover = compositionLocalOf { PaddingValues(0.dp) }
 internal fun ColumnScope.ToolbarAround(
     bar: @Composable () -> Unit,
     onCover: (Double, Double, Double, Double) -> Unit,
+    adaptiveState: ToolbarMotion? = null,
     content: @Composable (floatingBar: @Composable BoxScope.() -> Unit) -> Unit,
 ) {
     val look = LocalToolbarLook.current
     val rest = Modifier.weight(1f).fillMaxWidth()
-    if (!look.floating) {
+    if (!look.floating && adaptiveState == null) {
         SideEffect { onCover(0.0, 0.0, 0.0, 0.0) }
         val docked: @Composable BoxScope.() -> Unit = {}
         // Left and right are the screen's, as the canvas insets are, whatever the language.
@@ -101,7 +104,9 @@ internal fun ColumnScope.ToolbarAround(
         }
         return
     }
-    val depth = barMetrics(look.size).thickness + FLOAT_MARGIN
+    val margin = if (adaptiveState != null) 16.dp else FLOAT_MARGIN
+    // Collapse changes length only: keeping the cross-axis inset fixed avoids moving the document.
+    val depth = (if (adaptiveState != null) 64.dp else barMetrics(look.size).thickness) + margin
     val px = with(LocalDensity.current) { depth.toPx().toDouble() }
     val position = look.position
     SideEffect {
@@ -113,13 +118,19 @@ internal fun ColumnScope.ToolbarAround(
         )
     }
     val (cover, edge) = when (position) {
-        ToolbarPosition.TOP -> PaddingValues(top = depth) to Alignment.TopCenter
-        ToolbarPosition.BOTTOM -> PaddingValues(bottom = depth) to Alignment.BottomCenter
-        ToolbarPosition.LEFT -> PaddingValues.Absolute(left = depth) to AbsoluteAlignment.CenterLeft
-        ToolbarPosition.RIGHT -> PaddingValues.Absolute(right = depth) to AbsoluteAlignment.CenterRight
+        ToolbarPosition.TOP -> PaddingValues(top = depth) to if (adaptiveState != null) Alignment.TopEnd else Alignment.TopCenter
+        ToolbarPosition.BOTTOM -> PaddingValues(bottom = depth) to if (adaptiveState != null) Alignment.BottomEnd else Alignment.BottomCenter
+        ToolbarPosition.LEFT -> PaddingValues.Absolute(left = depth) to if (adaptiveState != null) AbsoluteAlignment.BottomLeft else AbsoluteAlignment.CenterLeft
+        ToolbarPosition.RIGHT -> PaddingValues.Absolute(right = depth) to if (adaptiveState != null) AbsoluteAlignment.BottomRight else AbsoluteAlignment.CenterRight
     }
     CompositionLocalProvider(LocalToolbarCover provides cover) {
-        Box(rest) { content { Box(Modifier.align(edge).padding(FLOAT_MARGIN)) { bar() } } }
+        Box(rest) {
+            content {
+                Box(Modifier.align(edge).padding(margin)) {
+                    CompositionLocalProvider(LocalAdaptiveToolbar provides adaptiveState) { bar() }
+                }
+            }
+        }
     }
 }
 
@@ -132,10 +143,13 @@ internal fun ColumnScope.ToolbarAround(
 internal fun ToolbarFrame(
     armed: Any?,
     trailing: (@Composable () -> Unit)? = null,
+    compactContent: (@Composable () -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     val look = LocalToolbarLook.current
-    val bar = barMetrics(look.size).copy(vertical = look.position.vertical)
+    val adaptive = LocalAdaptiveToolbar.current
+    val bar = (if (adaptive != null) BarMetrics(48.dp, 40.dp, 24.dp, 32.dp, 28.dp, 12.sp)
+        else barMetrics(look.size)).copy(vertical = look.position.vertical)
     val glide = remember { ToolGlide() }
     val palette = LocalPalette.current
     val shape = MaterialTheme.shapes.extraLarge
@@ -164,7 +178,12 @@ internal fun ToolbarFrame(
         ToolbarPosition.RIGHT -> TipSide.LEFT
     }
     CompositionLocalProvider(LocalToolGlide provides glide, LocalBar provides bar, LocalMenuOffset provides menuOffset, LocalTipSide provides tipSide) {
-        if (bar.vertical) {
+        if (adaptive != null) {
+            AdaptiveFloatingToolbar(adaptive, compactContent, trailing) {
+                if (bar.vertical) Column(Modifier.toolGlide(glide, armed), horizontalAlignment = Alignment.CenterHorizontally) { content() }
+                else Row(Modifier.toolGlide(glide, armed), verticalAlignment = Alignment.CenterVertically) { content() }
+            }
+        } else if (bar.vertical) {
             Column(
                 stretch.width(bar.thickness).then(surface),
                 horizontalAlignment = Alignment.CenterHorizontally,

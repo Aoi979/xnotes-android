@@ -36,6 +36,9 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.IconToggleButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -126,12 +129,22 @@ fun Toolbar(
     var switcherIndex by remember { mutableStateOf<Int?>(null) }
     var renaming by remember { mutableStateOf(false) }
     // Pinned outside the scrolling strip so closing a split pane is always one tap away.
-    ToolbarFrame(armed = editor.tool, trailing = onClosePane?.let { { ClosePaneButton(it) } }) {
+    val pinUndo = LocalAdaptiveToolbar.current != null && editor.toolbarLayout.visibleSections.any { section ->
+        section.visibleEntries.any { it.item == ToolbarItem.UNDO }
+    }
+    ToolbarFrame(
+        armed = editor.tool,
+        trailing = onClosePane?.let { { ClosePaneButton(it) } },
+        compactContent = if (pinUndo) ({
+            ToolbarIcon(XnotesIcons.undo, stringResource(R.string.undo), enabled = editor.canUndo, shortcut = Keys.UNDO) { editor.undo() }
+        }) else null,
+    ) {
         // The bar is driven by the user-customisable layout; separators sit between non-empty
         // sections, and each item dispatches to its renderer (see ToolbarItemView).
         editor.toolbarLayout.visibleSections.forEachIndexed { si, section ->
             if (si > 0) Separator()
             section.visibleEntries.forEach { entry ->
+                if (pinUndo && entry.item == ToolbarItem.UNDO) return@forEach
                 ToolbarItemView(
                     editor = editor,
                     item = entry.item,
@@ -487,6 +500,7 @@ private const val GLIDE_MAX_MS = 300
  * of its own.
  */
 @Composable
+@OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
 internal fun ToolbarIcon(
     icon: ImageVector,
     contentDescription: String,
@@ -499,6 +513,36 @@ internal fun ToolbarIcon(
 ) {
     val palette = LocalPalette.current
     val bar = LocalBar.current
+    if (LocalAdaptiveToolbar.current != null) {
+        Tooltip(contentDescription, hint = hint, shortcut = shortcut) {
+            if (glideKey != null) {
+                IconToggleButton(
+                    checked = active,
+                    onCheckedChange = { onClick() },
+                    shapes = IconButtonDefaults.toggleableShapes(),
+                    enabled = enabled,
+                    modifier = Modifier.size(bar.button),
+                    colors = IconButtonDefaults.iconToggleButtonColors(
+                        contentColor = palette.textDim.toComposeColor(),
+                        checkedContainerColor = palette.selectionBackground.toComposeColor(),
+                        checkedContentColor = palette.selectionForeground.toComposeColor(),
+                    ),
+                ) { Icon(icon, contentDescription, Modifier.size(bar.icon)) }
+            } else {
+                IconButton(
+                    onClick = onClick,
+                    shapes = IconButtonDefaults.shapes(),
+                    enabled = enabled,
+                    modifier = Modifier.size(bar.button),
+                    colors = IconButtonDefaults.iconButtonColors(
+                        containerColor = if (active) palette.selectionBackground.toComposeColor() else androidx.compose.ui.graphics.Color.Transparent,
+                        contentColor = if (active) palette.selectionForeground.toComposeColor() else palette.textDim.toComposeColor(),
+                    ),
+                ) { Icon(icon, contentDescription, Modifier.size(bar.icon)) }
+            }
+        }
+        return
+    }
     val glide = if (glideKey != null) LocalToolGlide.current else null
     val tint by animateColorAsState(
         when {

@@ -78,11 +78,21 @@ fun InfiniteToolbar(
     var switcherIndex by remember { mutableStateOf<Int?>(null) }
 
     // Pinned outside the scrolling strip so closing a split pane is always one tap away.
-    ToolbarFrame(armed = editor.tool, trailing = onClosePane?.let { { ClosePaneButton(it) } }) {
+    val pinUndo = LocalAdaptiveToolbar.current != null && editor.toolbarLayout.visibleSections.any { section ->
+        section.visibleEntries.any { it.item == ToolbarItem.UNDO }
+    }
+    ToolbarFrame(
+        armed = editor.tool,
+        trailing = onClosePane?.let { { ClosePaneButton(it) } },
+        compactContent = if (pinUndo) ({
+            ToolbarIcon(XnotesIcons.undo, stringResource(R.string.undo), enabled = editor.canUndo, shortcut = Keys.UNDO) { editor.undo() }
+        }) else null,
+    ) {
         val sections = editor.toolbarLayout.visibleSections
         sections.forEachIndexed { index, section ->
             if (index > 0) Separator()
             for (entry in section.visibleEntries) {
+                if (pinUndo && entry.item == ToolbarItem.UNDO) continue
                 when (val item = entry.item) {
                     ToolbarItem.HOME -> ToolbarIcon(XnotesIcons.prev, stringResource(R.string.toolbar_home)) { onOpenBackstage() }
                     // A name has no room down a side rail.

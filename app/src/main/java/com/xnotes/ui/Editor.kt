@@ -511,6 +511,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     /** How the toolbar is drawn, [Preferences.toolbarLook]. */
     var toolbarLook by mutableStateOf(ToolbarLook())
         private set
+
+    internal val toolbarMotion = ToolbarMotion()
     var zoomPercent by mutableStateOf(100)
         private set
 
@@ -1615,6 +1617,10 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         controller.onTap = { at -> tapClosesNotePeek(at) }
         controller.onAudioTap = { pageIndex, local -> tapAudio(pageIndex, local) }
         controller.onUserMovedView = { AudioPlayback.userMoved(this) }
+        controller.onUserPan = { dx, dy ->
+            toolbarMotion.pan(dx, dy, if (state.verticalScroll) ToolbarMotion.Axis.VERTICAL else ToolbarMotion.Axis.HORIZONTAL, state.devicePxPerDp.toFloat())
+        }
+        view.onUserPan = { dx, dy -> controller.onUserPan?.invoke(dx, dy) }
         // Whatever is added while this note records takes the recording's moment.
         history.onPush = { command -> AudioRecording.stamp(this, command.added()) }
         controller.onLinkTap = onLinkTap@{ pageIndex, pageLocal ->
@@ -5984,6 +5990,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         controller.resetGestureState() // drop the outgoing note's fling/elastic so it can't bleed in
         clearPageSelection()
         pageClipboard.clear() // clones reference the outgoing document; don't paste them into another
+        toolbarMotion.reset()
         state.document = doc
         rebuildPdfSource()
         adoptOpenPdf(doc) // outgoing note's PDF source is now closed; delete its temp file
@@ -8185,6 +8192,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         autosaveUri = null
         noteContentReady = false
         state.document = blankDocument().also { stampNewNoteDefaults(it) }
+        toolbarMotion.reset()
         rebuildPdfSource() // close the outgoing note's PDF source (a blank note has none)
         adoptOpenPdf(state.document) // and reclaim its temp PDF file now it's released
         history.clear()

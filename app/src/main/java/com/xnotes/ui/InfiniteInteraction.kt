@@ -122,6 +122,8 @@ class InfiniteInteraction(
     private val onAudioTap: (Pt) -> Boolean = { false },
     /** The view was panned or pinched by hand, as distinct from moved by the app. */
     private val onUserMovedView: () -> Unit = {},
+    /** User translation in viewport pixels, including the translation part of a two-finger pan. */
+    private val onUserPan: (Double, Double) -> Unit = { _, _ -> },
 ) {
 
     private val choreographer = Choreographer.getInstance()
@@ -1742,7 +1744,10 @@ class InfiniteInteraction(
     private fun extendPan(vx: Double, vy: Double) {
         trackVelocity(vx, vy)
         onUserMovedView()
-        if (singleFingerPanAllowed()) viewport.panByViewport(vx - lastPan.x, vy - lastPan.y)
+        if (singleFingerPanAllowed()) {
+            viewport.panByViewport(vx - lastPan.x, vy - lastPan.y)
+            onUserPan(vx - lastPan.x, vy - lastPan.y)
+        }
         lastPan = Pt(vx, vy)
         onViewChanged()
         requestRender()
@@ -1784,6 +1789,7 @@ class InfiniteInteraction(
         if (pinchPanAllowed()) {
             viewport.scrollX = pinchAnchorContent.x - mid.x / viewport.zoom
             viewport.scrollY = pinchAnchorContent.y - mid.y / viewport.zoom
+            onUserPan(mid.x - lastPan.x, mid.y - lastPan.y)
         }
         lastPan = mid
         onViewChanged()
@@ -1827,6 +1833,7 @@ class InfiniteInteraction(
         val dt = ((now - lastFlingMs).coerceIn(1L, 40L)) / 1000.0
         lastFlingMs = now
         viewport.panByViewport(flingVel.x * dt, flingVel.y * dt)
+        onUserPan(flingVel.x * dt, flingVel.y * dt)
         val decay = exp(-InteractionController.FLING_FRICTION * dt)
         flingVel = Pt(flingVel.x * decay, flingVel.y * decay)
         onViewChanged()

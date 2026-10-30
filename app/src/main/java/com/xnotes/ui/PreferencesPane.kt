@@ -731,6 +731,21 @@ fun PreferencesPane(
             // Each appearance control and the drag editor are independent lazy items.
             val look = prefs.toolbarLook
 
+            preferenceItem("toolbar-collapsing") {
+                FieldLabel(stringResource(R.string.pref_toolbar_collapsing))
+                SwitchRow(stringResource(R.string.pref_toolbar_collapsing_notes), look.collapsingNotes) {
+                    updateHome(prefs.copy(toolbarLook = look.copy(collapsingNotes = it)))
+                }
+                SwitchRow(stringResource(R.string.pref_toolbar_collapsing_canvas), look.collapsingCanvas) {
+                    updateHome(prefs.copy(toolbarLook = look.copy(collapsingCanvas = it)))
+                }
+                Text(
+                    stringResource(R.string.pref_toolbar_collapsing_help),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = palette.textDim.toComposeColor(),
+                )
+            }
+
             preferenceItem("toolbar-style") {
                 FieldLabel(stringResource(R.string.pref_toolbar_style))
                 ExpressiveChoiceGroup(

@@ -110,6 +110,9 @@ class CanvasView @JvmOverloads constructor(
     /** Invoked after a scrollbar drag moved the view, so the host can refresh (page indicator). */
     var onScrollbarScrolled: (() -> Unit)? = null
 
+    /** Scrollbar navigation in the same finger/content direction as the gesture controller. */
+    var onUserPan: ((Double, Double) -> Unit)? = null
+
     // Scrollbar drag state; the thumb is tracked as a fraction so fast drags don't drift.
     private var scrollbarDragging = false
     private var scrollbarFrac = 0.0
@@ -230,14 +233,18 @@ class CanvasView @JvmOverloads constructor(
                 if (delta != 0f && travel > 0f) {
                     scrollbarFrac = (scrollbarFrac + delta / travel).coerceIn(0.0, 1.0)
                     if (st.verticalScroll) {
+                        val before = st.scrollY
                         st.scrollY = st.minScrollY() + scrollbarFrac * (st.maxScrollY() - st.minScrollY())
                         st.clampScroll()
+                        onUserPan?.invoke(0.0, before - st.scrollY)
                         onScrollbarScrolled?.invoke()
                     } else {
                         val rows = st.rowRanges()
                         val target = (scrollbarFrac * (rows.size - 1)).toInt().coerceIn(0, rows.lastIndex)
                         if (target != st.currentRow) {
+                            val travelPx = (st.currentRow - target) * st.clearW
                             st.goToPage(rows[target].first)
+                            onUserPan?.invoke(travelPx, 0.0)
                             onScrollbarScrolled?.invoke()
                         }
                     }

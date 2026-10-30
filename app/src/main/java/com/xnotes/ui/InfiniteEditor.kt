@@ -109,6 +109,12 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
 
     val viewport: CanvasViewport get() = view.viewport
 
+    internal val toolbarMotion = ToolbarMotion()
+
+    private fun toolbarPanned(dx: Double, dy: Double) {
+        toolbarMotion.pan(dx, dy, ToolbarMotion.Axis.FREE, devicePxPerDp.toFloat())
+    }
+
     val interaction = InfiniteInteraction(
         viewport = view.viewport,
         requestRender = { view.publish() },
@@ -142,6 +148,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         onCommitText = { commitText() },
         onAudioTap = { tapAudio(it) },
         onUserMovedView = { AudioPlayback.userMoved(this) },
+        onUserPan = ::toolbarPanned,
     )
 
     private val devicePxPerDp = appContext.resources.displayMetrics.density.toDouble()
@@ -965,6 +972,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     override fun panWhileEditing(dxFinger: Float, dyFinger: Float) {
         if (editingLabel == null) return
         viewport.panByViewport(dxFinger.toDouble(), dyFinger.toDouble())
+        toolbarPanned(dxFinger.toDouble(), dyFinger.toDouble())
         onViewChanged()
         view.publish()
     }
@@ -2269,6 +2277,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         editingField = null
         textBar = null
         document.listener = null
+        toolbarMotion.reset()
         document = next
         mathToolsOpen = false
         cuteToolsOpen = false

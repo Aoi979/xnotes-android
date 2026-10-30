@@ -181,6 +181,9 @@ class InteractionController(
     /** The view was panned or pinched by hand, as distinct from moved by the app. */
     var onUserMovedView: (() -> Unit)? = null
 
+    /** Actual user translation in viewport pixels; zoom and automatic camera moves are excluded. */
+    var onUserPan: ((Double, Double) -> Unit)? = null
+
     /** A finger tap that may land on an audio pill, at [pageLocal] on page [pageIndex]; true when one took it. */
     var onAudioTap: ((pageIndex: Int, pageLocal: Pt) -> Boolean)? = null
 
@@ -2604,7 +2607,10 @@ class InteractionController(
      */
     fun panWhileEditing(dxFinger: Double, dyFinger: Double) {
         if (editingText == null && editingLabel == null) return
+        val beforeX = state.scrollX
+        val beforeY = state.scrollY
         state.scrollBy(-dxFinger, -dyFinger)
+        onUserPan?.invoke(beforeX - state.scrollX, beforeY - state.scrollY)
         onViewChanged()
         requestRender()
     }
@@ -3658,10 +3664,13 @@ class InteractionController(
     private fun extendPan(vx: Double, vy: Double) {
         trackVelocity(vx, vy)
         onUserMovedView?.invoke()
+        val panBeforeX = state.scrollX + state.flipOffsetX
+        val panBeforeY = state.scrollY
         val dx = -(vx - lastPan.x)
         var dy = -(vy - lastPan.y)
         if (!state.verticalScroll) {
             extendPanPaginated(dx, dy)
+            onUserPan?.invoke(panBeforeX - state.scrollX - state.flipOffsetX, panBeforeY - state.scrollY)
             lastPan = Pt(vx, vy)
             onViewChanged()
             requestRender()
@@ -3693,6 +3702,7 @@ class InteractionController(
             updateOverscrollArmed()
         }
         lastPan = Pt(vx, vy)
+        onUserPan?.invoke(panBeforeX - state.scrollX - state.flipOffsetX, panBeforeY - state.scrollY)
         onViewChanged()
         requestRender()
     }
@@ -3892,6 +3902,7 @@ class InteractionController(
         val beforeX = state.scrollX
         val beforeY = state.scrollY
         state.scrollBy(flingVel.x * dt, flingVel.y * dt)
+        onUserPan?.invoke(beforeX - state.scrollX, beforeY - state.scrollY)
         val decay = exp(-FLING_FRICTION * dt)
         flingVel = Pt(flingVel.x * decay, flingVel.y * decay)
         onViewChanged()
@@ -4091,6 +4102,7 @@ class InteractionController(
             // Only a pan-only (zoom-locked) pinch works the elastics. While the zoom is changing the
             // clamp rejects scroll for reasons that have nothing to do with reaching past the end.
             if (state.zoomLocked) applyPinchElastic(targetX - state.scrollX, targetY - state.scrollY)
+            onUserPan?.invoke(mid.x - lastPan.x, mid.y - lastPan.y)
         }
         lastPan = mid
         onViewChanged() // live zoom %: refresh the toolbar each pinch frame, not just at the end

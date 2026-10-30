@@ -6,6 +6,9 @@ data class ToolbarLook(
     val size: ToolbarSize = ToolbarSize.REGULAR,
     /** A rounded pill over the canvas instead of a strip along the pane's edge. */
     val floating: Boolean = false,
+    /** Official M3 floating toolbar with navigation-driven collapse, independently per editor. */
+    val collapsingNotes: Boolean = false,
+    val collapsingCanvas: Boolean = false,
 )
 
 /** Which edge of its pane the toolbar runs along. */
