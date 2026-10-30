@@ -770,21 +770,6 @@ class CanvasView @JvmOverloads constructor(
         requestRender()
     }
 
-    /**
-     * Take the pen's samples as the driver produces them rather than batched to the frame the view
-     * tree is about to draw.
-     *
-     * Only while the front buffer has the stroke. There the canvas is not drawing the ink at all,
-     * so a batch is pure delay; on the ordinary path it is doing a job, since one frame's samples
-     * collapse into one repaint and a stroke re-filled per sample gets slower as it grows.
-     */
-    fun setUnbufferedStylus(on: Boolean) {
-        if (android.os.Build.VERSION.SDK_INT < 30) return
-        requestUnbufferedDispatch(
-            if (on) android.view.InputDevice.SOURCE_STYLUS else android.view.InputDevice.SOURCE_CLASS_NONE,
-        )
-    }
-
     companion object {
         /** Max gesture duration (ms) still counted as a tap. */
         private const val TAP_TIMEOUT_MS = 500L

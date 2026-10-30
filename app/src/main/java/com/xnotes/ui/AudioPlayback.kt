@@ -1,6 +1,7 @@
 package com.xnotes.ui
 
 import android.content.BroadcastReceiver
+import android.app.Application
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -72,7 +73,7 @@ object AudioPlayback {
 
     private const val TICK_MS = 100L
 
-    private var app: Context? = null
+    private var app: Application? = null
     private var player: MediaPlayer? = null
     private var prepared = false
     private var wantPlay = false
@@ -99,9 +100,9 @@ object AudioPlayback {
         }
     }
 
-    fun init(context: Context) {
-        app = context.applicationContext
-        AudioPositions.init(context)
+    fun init(application: Application) {
+        app = application
+        AudioPositions.init(application)
     }
 
     /** Open the player on [item] for [owner], closing any other, at [from] or where it was left; [play] starts it. */

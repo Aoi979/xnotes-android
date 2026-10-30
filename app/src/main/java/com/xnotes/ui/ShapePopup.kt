@@ -36,7 +36,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -73,7 +72,7 @@ fun ShapeConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
     val ink = editor.hostToolbarColors.getOrNull(editor.hostActiveColorIndex) ?: Rgba(0, 0, 0)
     // DropdownMenu measures its content intrinsically. BoxWithConstraints uses subcomposition
     // and cannot answer that query, so derive the width from the current app window instead.
-    val popupWidth = (LocalConfiguration.current.screenWidthDp.dp - 32.dp)
+    val popupWidth = (windowSizeDp().width - 32.dp)
         .coerceIn(232.dp, 336.dp)
     val maxColumns = minOf(ShapePresets.COLUMNS, ConnectorPresets.COLUMNS)
     val columns = ((popupWidth - 28.dp + GAP.dp) / (CELL.dp + GAP.dp)).toInt().coerceIn(3, maxColumns)

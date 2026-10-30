@@ -42,7 +42,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -93,7 +92,7 @@ internal fun CanvasMathDialog(editor: InfiniteEditor, onDismiss: () -> Unit) {
     }
     val measurer = remember { AndroidTextMeasurer() }
     val preview = remember(diagram) { diagram?.materialize(measurer).orEmpty() }
-    val contentHeight = (LocalConfiguration.current.screenHeightDp * 0.68f).dp.coerceAtMost(760.dp)
+    val contentHeight = (windowSizeDp().height * 0.68f).coerceAtMost(760.dp)
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -189,7 +188,7 @@ internal fun CanvasLinearTransformDialog(editor: InfiniteEditor, onDismiss: () -
         else originals.deepCopyAll(measurer).also { LinearInk.mapDetached(it, matrix, origin) }
     }
     val paper = editor.document.background.paperColor ?: LocalPalette.current.paper
-    val contentHeight = (LocalConfiguration.current.screenHeightDp * 0.68f).dp.coerceAtMost(760.dp)
+    val contentHeight = (windowSizeDp().height * 0.68f).coerceAtMost(760.dp)
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.canvas_linear_transform)) },

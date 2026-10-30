@@ -161,7 +161,12 @@ internal fun MarkdownTableSheet(request: MarkdownTableRequest, onDismiss: () -> 
                                     OutlinedTextField(value, { table = table.cell(r, c, it) }, modifier = Modifier.width(164.dp).padding(end = 8.dp)
                                         .focusRequester(requester).onFocusChanged { if (it.isFocused) { selectedRow = r; selectedCol = c } },
                                         singleLine = true, keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next), keyboardActions = KeyboardActions(onNext = { next(r, c) }),
-                                        label = { Text(stringResource(if (r == 0) R.string.md_header_cell else R.string.md_body_cell, r, c + 1)) })
+                                        label = {
+                                            Text(
+                                                if (r == 0) stringResource(R.string.md_header_cell, c + 1)
+                                                else stringResource(R.string.md_body_cell, r, c + 1),
+                                            )
+                                        })
                                 }
                             }
                         }

@@ -65,6 +65,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.ImageBitmap
@@ -81,6 +82,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
@@ -375,16 +377,16 @@ private fun PagesTab(
                     selecting,
                     settled,
                     carried,
-                    Modifier.animateItem(
-                        fadeInSpec = materialItemFadeSpec,
-                        placementSpec = materialItemPlacementSpec,
-                        fadeOutSpec = materialItemFadeSpec,
-                    ),
                     onSharePages,
                     onSavePagesAsPdf,
                     onSavePagesAsImages,
                     onInsertPdf,
                     onPickCover,
+                    modifier = Modifier.animateItem(
+                        fadeInSpec = materialItemFadeSpec,
+                        placementSpec = materialItemPlacementSpec,
+                        fadeOutSpec = materialItemFadeSpec,
+                    ),
                 )
             }
         }
@@ -409,20 +411,24 @@ private class PageDrag(val pages: List<Page>, val from: Offset, val bitmap: Imag
 /** The accent line across the gap the carried pages would land in, while that gap is in view. */
 @Composable
 private fun BoxScope.DropLine(listState: LazyListState, gap: Int, pad: Float) {
-    val density = LocalDensity.current
-    val rows = listState.layoutInfo.visibleItemsInfo
-    val half = with(density) { ROW_GAP.toPx() } / 2f
-    val y = rows.firstOrNull { it.index == gap }?.let { pad + it.offset - half }
-        ?: rows.lastOrNull()?.takeIf { it.index + 1 == gap }?.let { pad + it.offset + it.size + half }
-        ?: return
-    val thick = with(density) { DROP_LINE.toPx() }
+    val color = LocalPalette.current.accent.toComposeColor()
     Box(
-        Modifier
-            .align(Alignment.TopCenter)
-            .offset { IntOffset(0, (y - thick / 2f).roundToInt()) }
-            .size(THUMB_W + 12.dp, DROP_LINE)
-            .clip(CircleShape)
-            .background(LocalPalette.current.accent.toComposeColor()),
+        Modifier.matchParentSize().drawBehind {
+            // Scroll only invalidates drawing; it need not recompose the page panel.
+            val rows = listState.layoutInfo.visibleItemsInfo
+            val halfGap = ROW_GAP.toPx() / 2f
+            val y = rows.firstOrNull { it.index == gap }?.let { pad + it.offset - halfGap }
+                ?: rows.lastOrNull()?.takeIf { it.index + 1 == gap }?.let { pad + it.offset + it.size + halfGap }
+                ?: return@drawBehind
+            val thickness = DROP_LINE.toPx()
+            val width = (THUMB_W + 12.dp).toPx().coerceAtMost(size.width)
+            drawRoundRect(
+                color = color,
+                topLeft = Offset((size.width - width) / 2f, y - thickness / 2f),
+                size = Size(width, thickness),
+                cornerRadius = CornerRadius(thickness / 2f),
+            )
+        },
     )
 }
 
@@ -491,12 +497,12 @@ private fun PageThumb(
     settled: Boolean,
     /** Lifted in a drag: the row dims while the pages are carried. */
     carried: Boolean,
-    rowModifier: Modifier,
     onSharePages: (List<Int>, Boolean) -> Unit,
     onSavePagesAsPdf: (List<Int>) -> Unit,
     onSavePagesAsImages: (List<Int>) -> Unit,
     onInsertPdf: (Int) -> Unit,
     onPickCover: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val palette = LocalPalette.current
     val current = index == editor.pageIndex
@@ -519,7 +525,7 @@ private fun PageThumb(
     // Reserve the row's height from the aspect ratio so it stays put before the bitmap loads.
     val aspect = editor.pageAspectRatio(page)
     val borderColor = if (selected || current) palette.accent else palette.border
-    Column(rowModifier.alpha(if (carried) 0.35f else 1f), horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(modifier.alpha(if (carried) 0.35f else 1f), horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
             Modifier
                 .width(THUMB_W)
@@ -528,7 +534,10 @@ private fun PageThumb(
                 // Tap navigates (or toggles selection in select mode). Long-presses belong to the
                 // panel (see PagesTab), so a drag survives the row scrolling away.
                 .clickable { if (selecting) editor.togglePageSelection(index) else editor.goToPage(index) }
-                .semantics { onLongClick { editor.togglePageSelection(index); true } },
+                .semantics {
+                    if (selecting) this.selected = selected
+                    onLongClick { editor.togglePageSelection(index); true }
+                },
         ) {
             bitmap?.let { Image(it, contentDescription = stringResource(R.string.page_n, index + 1), modifier = Modifier.fillMaxSize()) }
 
@@ -539,7 +548,7 @@ private fun PageThumb(
                         .clip(CircleShape).background(palette.accent.toComposeColor()),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(XnotesIcons.check, stringResource(R.string.selected), tint = palette.onAccent.toComposeColor(), modifier = Modifier.size(13.dp))
+                    Icon(XnotesIcons.check, contentDescription = null, tint = palette.onAccent.toComposeColor(), modifier = Modifier.size(13.dp))
                 }
             } else if (!selecting) {
                 // Three-dot menu, on a faint scrim so it reads over any thumbnail.

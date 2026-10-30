@@ -36,7 +36,6 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -77,8 +76,8 @@ internal fun CuteLayoutDialog(editor: InfiniteEditor, onDismiss: () -> Unit) {
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
     val palette = LocalPalette.current
-    val screen = LocalConfiguration.current
-    val tall = screen.screenHeightDp >= 650
+    val windowHeight = windowSizeDp().height
+    val tall = windowHeight >= 650.dp
     val update: (CuteSpec) -> Unit = { if (!insertingSet) { editor.cuteDraft = it; saveError = false; copied = false } }
     val output: @Composable (Int) -> Unit = { height ->
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -108,7 +107,7 @@ internal fun CuteLayoutDialog(editor: InfiniteEditor, onDismiss: () -> Unit) {
 
     Dialog(onDismissRequest = { if (!insertingSet) onDismiss() }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(
-            modifier = Modifier.padding(12.dp).widthIn(max = 1160.dp).fillMaxWidth().heightIn(max = (screen.screenHeightDp * 0.94f).dp)
+            modifier = Modifier.padding(12.dp).widthIn(max = 1160.dp).fillMaxWidth().heightIn(max = (windowHeight * 0.94f))
                 .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.large),
             shape = MaterialTheme.shapes.large,
             color = palette.menuBg.toComposeColor(),
@@ -140,7 +139,7 @@ internal fun CuteLayoutDialog(editor: InfiniteEditor, onDismiss: () -> Unit) {
                                     CuteHelp()
                                 }
                                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    output((screen.screenHeightDp - 350).coerceIn(240, 760))
+                                    output((windowHeight.value.toInt() - 350).coerceIn(240, 760))
                                 }
                             }
                         } else {

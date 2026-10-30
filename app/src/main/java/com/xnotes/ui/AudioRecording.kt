@@ -1,5 +1,6 @@
 package com.xnotes.ui
 
+import android.app.Application
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
@@ -95,7 +96,7 @@ object AudioRecording {
     /** A recording left behind whose note never opened again is let go after this long. */
     private const val KEEP_LEFT_MS = 30L * 24 * 60 * 60 * 1000
 
-    private var app: Context? = null
+    private var app: Application? = null
     private var recorder: AudioRecorder? = null
     private val main = Handler(Looper.getMainLooper())
     private val worker = Executors.newSingleThreadExecutor { r -> Thread(r, "audio-remux") }
@@ -121,10 +122,10 @@ object AudioRecording {
         }
     }
 
-    fun init(context: Context) {
-        app = context.applicationContext
+    fun init(application: Application) {
+        app = application
         val cutoff = System.currentTimeMillis() - KEEP_LEFT_MS
-        for (f in dir(context).listFiles().orEmpty()) if (f.lastModified() < cutoff) f.delete()
+        for (f in dir(application).listFiles().orEmpty()) if (f.lastModified() < cutoff) f.delete()
     }
 
     /** Where recordings in progress are written; nothing else lives there. */

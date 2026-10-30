@@ -1,4 +1,4 @@
-# --- Planning / spec / AI artifacts (never commit) ---
+# --- Local planning files (never commit) ---
 CLAUDE.md
 .claude/
 
@@ -28,3 +28,6 @@ keystore.properties
 # --- Misc ---
 .DS_Store
 *.log
+# Local-only collaboration notes
+/AGENTS.md
+/docs/**/*.md

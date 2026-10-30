@@ -5,7 +5,7 @@ import androidx.annotation.StringRes
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import com.xnotes.R
 import com.xnotes.core.model.PageEdge
@@ -227,7 +227,7 @@ internal class ResourceWords(private val res: Resources) : ExplorerWords {
 
 @Composable
 internal fun rememberExplorerWords(): ExplorerWords {
-    val context = LocalContext.current
+    val resources = LocalResources.current
     val configuration = LocalConfiguration.current
-    return remember(configuration) { ResourceWords(context.resources) }
+    return remember(resources, configuration) { ResourceWords(resources) }
 }

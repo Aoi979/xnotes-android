@@ -19,7 +19,7 @@ object NameTemplate {
     private val TOKENS = listOf("YYYY", "YY", "MM", "DD", "HH", "mm", "ss")
 
     /** True when [template] carries a sequence placeholder. */
-    fun hasSequence(template: String): Boolean = template.contains(SEQUENCE)
+    fun hasSequence(template: String): Boolean = SEQUENCE in template
 
     /** Substitute the sequence placeholder in an already date-expanded name. */
     fun withSequence(expanded: String, n: Int): String = expanded.replace(SEQUENCE, n.toString())
@@ -61,15 +61,8 @@ object NameTemplate {
      * nothing usable is left, so a bad template can never produce an unnamed file.
      */
     fun sanitize(name: String): String {
-        val cleaned = buildString(name.length) {
-            for (c in name) {
-                when {
-                    c.code < 0x20 -> Unit
-                    c in "/\\:*?\"<>|" -> Unit
-                    else -> append(c)
-                }
-            }
-        }.trim().trim('.').trim()
+        val cleaned = name.filterNot { it.code < 0x20 || it in "/\\:*?\"<>|" }
+            .trim().trim('.').trim()
         return cleaned.ifEmpty { "untitled" }
     }
 

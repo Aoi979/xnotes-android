@@ -35,6 +35,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
@@ -63,6 +64,8 @@ import kotlin.math.roundToInt
 @Composable
 fun MarkdownPane(editor: Editor, session: MarkdownSession, onHome: () -> Unit, onClose: (() -> Unit)?) {
     val context = LocalContext.current
+    val resources by rememberUpdatedState(LocalResources.current)
+    val pickedFiles = remember(context) { com.xnotes.platform.PickedFiles(context.contentResolver) }
     val palette = LocalPalette.current
     val colors = MaterialTheme.colorScheme
     val focusManager = LocalFocusManager.current
@@ -131,10 +134,10 @@ fun MarkdownPane(editor: Editor, session: MarkdownSession, onHome: () -> Unit, o
                 if (e is CancellationException) throw e
                 null
             }
-            if (page == null) { preparingPdf = false; editor.say(context.getString(R.string.err_export_pdf)); return@launch }
+            if (page == null) { preparingPdf = false; editor.say(resources.getString(R.string.err_export_pdf)); return@launch }
             com.xnotes.platform.MarkdownPrint.start(context, session.store, parent, page, name, pdf) { ok ->
                 preparingPdf = false
-                if (!ok) editor.say(context.getString(R.string.err_export_pdf))
+                if (!ok) editor.say(resources.getString(R.string.err_export_pdf))
             }
         }
     }
@@ -163,16 +166,16 @@ fun MarkdownPane(editor: Editor, session: MarkdownSession, onHome: () -> Unit, o
         revealSource(range.first, range.last + 1)
     }
     val saveCopy = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/markdown")) { uri ->
-        if (uri != null) {
-            runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
-            session.saveCopy(uri.toString(), markdownDisplayName(context, uri) ?: session.name) { ok ->
+        if (uri != null) scope.launch {
+            pickedFiles.retainGrant(uri)
+            session.saveCopy(uri.toString(), pickedFiles.readName(uri) ?: session.name) { ok ->
                 if (ok) scope.launch { session.resourceParent = withContext(Dispatchers.IO) { session.store.parent(uri.toString(), null) } }
             }
         }
     }
     val grantDirectory = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-        if (uri != null) {
-            runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
+        if (uri != null) scope.launch {
+            pickedFiles.retainGrant(uri)
             session.resourceParent = android.provider.DocumentsContract.buildDocumentUriUsingTree(uri, android.provider.DocumentsContract.getTreeDocumentId(uri))
         }
     }
@@ -180,7 +183,7 @@ fun MarkdownPane(editor: Editor, session: MarkdownSession, onHome: () -> Unit, o
         val parent = session.resourceParent
         if (uri != null && parent != null) scope.launch {
             val path = withContext(Dispatchers.IO) { runCatching { session.store.insertImage(parent, uri) }.getOrNull() }
-            if (path == null) editor.say(context.getString(R.string.err_read_image))
+            if (path == null) editor.say(resources.getString(R.string.err_read_image))
             else if (editor.markdown === session) {
                 val current = session.input.text.toString()
                 val range = session.input.selection
@@ -199,11 +202,11 @@ fun MarkdownPane(editor: Editor, session: MarkdownSession, onHome: () -> Unit, o
             val region = withContext(Dispatchers.Default) { MarkdownTable.at(source, range.min) }
             if (editor.markdown !== session || session.input.text.toString() != source) return@launch
             if (region == null && withContext(Dispatchers.Default) { MarkdownBlocks.isLiteral(source, range.min) }) {
-                editor.say(context.getString(R.string.md_block_unsupported)); return@launch
+                editor.say(resources.getString(R.string.md_block_unsupported)); return@launch
             }
             if (region != null && (range.max > region.end || region.table.rows.size > TableDefaults.MAX_ROWS || region.table.columns > TableDefaults.MAX_COLS) ||
                 region == null && withContext(Dispatchers.Default) { MarkdownTable.contains(source, range.min) }) {
-                editor.say(context.getString(R.string.md_table_unsupported))
+                editor.say(resources.getString(R.string.md_table_unsupported))
             } else tableRequest = MarkdownTableRequest(source, range.start, range.end, region)
         }
     }
@@ -337,7 +340,7 @@ fun MarkdownPane(editor: Editor, session: MarkdownSession, onHome: () -> Unit, o
                             }) { Text(stringResource(R.string.md_replace)) }
                             TextButton(enabled = matches.isNotEmpty() && !session.readOnly, onClick = {
                                     val edit = MarkdownEdit.replaceAll(text, matches, replacement, session.input.selection.start)
-                                    if (edit != null) session.apply(edit) else editor.say(context.getString(R.string.md_too_large))
+                                    if (edit != null) session.apply(edit) else editor.say(resources.getString(R.string.md_too_large))
                             }) { Text(stringResource(R.string.md_replace_all)) }
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -384,7 +387,7 @@ fun MarkdownPane(editor: Editor, session: MarkdownSession, onHome: () -> Unit, o
                                     val next = asCharSequence().toString()
                                     if (!MarkdownSource.editableText(next)) {
                                         revertAllChanges()
-                                        editor.say(context.getString(R.string.md_too_large))
+                                        editor.say(resources.getString(R.string.md_too_large))
                                     } else if (session.input.composition == null) {
                                         val old = originalText.toString()
                                         val at = originalSelection.start
@@ -443,7 +446,7 @@ fun MarkdownPane(editor: Editor, session: MarkdownSession, onHome: () -> Unit, o
                 exit = shrinkVertically(XnotesMotion.fastSpatialSpec(), shrinkTowards = Alignment.Bottom) + fadeOut(XnotesMotion.fastEffectsSpec())) {
                 MarkdownFormattingToolbar(session, onTable = ::editTable, onImage = {
                     if (session.resourceParent == null) grantDirectory.launch(null) else image.launch(arrayOf("image/png", "image/jpeg", "image/webp", "image/gif"))
-                }, onUnsupported = { editor.say(context.getString(R.string.md_block_unsupported)) })
+                }, onUnsupported = { editor.say(resources.getString(R.string.md_block_unsupported)) })
             }
         }
     }
@@ -453,13 +456,13 @@ fun MarkdownPane(editor: Editor, session: MarkdownSession, onHome: () -> Unit, o
         onDismiss = { pdfSettings = false }, onConfirm = { pdf, export -> editor.setMarkdownPdfStyle(pdf); if (export) exportMarkdownPdf(pdf) })
     tableRequest?.let { request -> MarkdownTableSheet(request, onDismiss = { tableRequest = null }, onApply = { table ->
         if (session.readOnly || session.input.text.toString() != request.source) {
-            editor.say(context.getString(R.string.md_table_changed)); false
+            editor.say(resources.getString(R.string.md_table_changed)); false
         } else if (request.region?.table == table) true else {
             val edit = if (request.region == null) MarkdownTable.insert(request.source, request.start, request.end, table)
                 else request.region.replace(request.source, table)
             if (edit != null && MarkdownSource.editableText(edit.text)) {
                 session.apply(edit); revealSource(edit.start, edit.end); true
-            } else { editor.say(context.getString(R.string.md_too_large)); false }
+            } else { editor.say(resources.getString(R.string.md_too_large)); false }
         }
     }) }
     if (outline) ModalBottomSheet(sheetState = outlineState, onDismissRequest = { outline = false }) {
@@ -512,12 +515,6 @@ internal fun MdIcon(icon: ImageVector, label: String, enabled: Boolean = true, o
         }
     }
 }
-
-private fun markdownDisplayName(context: android.content.Context, uri: Uri): String? = runCatching {
-    context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
-        if (it.moveToFirst()) it.getString(0) else null
-    }
-}.getOrNull()
 
 /** Only bundled diagram scripts may run; the finished document is frozen with JavaScript off. */
 @Composable

@@ -37,10 +37,9 @@ enum class DocumentKind(val extension: String, vararg aliases: String) {
         fun isDocument(name: String): Boolean = ofName(name) != null
 
         /** [name] without its document extension, or unchanged when it has none. */
-        fun stripSuffix(name: String): String {
-            val kind = ofName(name) ?: return name
-            return name.dropLast(kind.suffixOf(name)!!.length)
-        }
+        fun stripSuffix(name: String): String = entries.firstNotNullOfOrNull { it.suffixOf(name) }
+            ?.let { suffix -> name.dropLast(suffix.length) }
+            ?: name
 
         /** [name] with [kind]'s extension, added only if it is not already the right one. */
         fun withSuffix(name: String, kind: DocumentKind): String =

@@ -6,6 +6,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
+import com.xnotes.platform.setUnbufferedStrokeInput
 import com.xnotes.R
 import com.xnotes.canvas.InteractionController
 import com.xnotes.core.fill.ColorDrop
@@ -1476,7 +1477,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         pad.setTail(emptyList())
         frontInk = true
         runPoints = FRONT_RUN_POINTS
-        view.setUnbufferedStylus(true)
+        view.setUnbufferedStrokeInput(true)
         return true
     }
 
@@ -1564,7 +1565,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         // A shorter run on the front buffer, because there the tail is what a present has to clear
         // and rebuild, and its extent is the size of everything that present does.
         runPoints = FRONT_RUN_POINTS
-        view.setUnbufferedStylus(true)
+        view.setUnbufferedStrokeInput(true)
         return true
     }
 
@@ -1574,7 +1575,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         frontInk = false
         // Strokes that joined this one are still the pad's, and the pad is about to be wiped.
         settleHeld()
-        view.setUnbufferedStylus(false)
+        view.setUnbufferedStrokeInput(false)
         pad.endStroke()
     }
 
@@ -1978,7 +1979,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         pad.freeze()
         // The tail was never settled into a run, so a stroke that joins this one has to do it.
         handoverTail = tail
-        view.setUnbufferedStylus(false)
+        view.setUnbufferedStrokeInput(false)
         // The wand's ink never becomes a committed item, so there is nothing to hand it over to.
         if (wandEnabled && stroke.tool.isStroke) {
             holdEphemeral(stroke)

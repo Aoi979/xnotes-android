@@ -275,26 +275,6 @@ class InfiniteCanvasView @JvmOverloads constructor(
         publish()
     }
 
-    /**
-     * Take the pen's samples as the driver produces them rather than batched to the frame the view
-     * tree is about to draw.
-     *
-     * Only worth it while the front buffer has the stroke. It does not draw on the view tree's
-     * frame, so a batch is pure delay there: the newest sample in it is already a refresh old by
-     * the time it arrives. On the ordinary path the batching is doing a job, because one frame's
-     * samples collapse into one re-mesh, and a pen whose whole stroke is re-meshed per sample gets
-     * slower with every point it has already laid down.
-     *
-     * Needs the source form rather than the event form, because whether the stroke is going to the
-     * front buffer is not known until it has been meshed once, which is well past its first event.
-     */
-    fun setUnbufferedStylus(on: Boolean) {
-        if (android.os.Build.VERSION.SDK_INT < 30) return
-        requestUnbufferedDispatch(
-            if (on) android.view.InputDevice.SOURCE_STYLUS else android.view.InputDevice.SOURCE_CLASS_NONE,
-        )
-    }
-
     @Suppress("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (trackFourFingerTap(event)) return true

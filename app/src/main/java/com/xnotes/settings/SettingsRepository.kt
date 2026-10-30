@@ -9,7 +9,7 @@ class SettingsRepository(context: Context) {
 
     fun load(): Settings = Settings.fromJson(store.read())
 
-    fun save(settings: Settings) = store.write(settings.toJson())
+    fun save(settings: Settings) { store.write(settings.toJson()) }
 }
 
 /**

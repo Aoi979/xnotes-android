@@ -1,6 +1,6 @@
 package com.xnotes.platform
 
-import com.xnotes.core.util.DocKeys
+import com.xnotes.core.util.moveDocumentKeys
 import org.json.JSONObject
 
 /**
@@ -19,10 +19,8 @@ class CreationTimeStore(private val store: JsonStore) {
     private val times: MutableMap<String, Long> = load()
 
     private fun load(): MutableMap<String, Long> {
-        val out = HashMap<String, Long>()
-        val o = store.read()
-        for (key in o.keys()) out[key] = o.optLong(key, 0L)
-        return out
+        val saved = store.read()
+        return saved.keys().asSequence().associateWithTo(mutableMapOf()) { saved.optLong(it, 0L) }
     }
 
     @Synchronized
@@ -31,9 +29,10 @@ class CreationTimeStore(private val store: JsonStore) {
     /** Record each key of [stamps] not seen before at its time; persist once if anything changed. */
     @Synchronized
     fun stampMissing(stamps: Map<String, Long>) {
-        var changed = false
-        for ((k, t) in stamps) if (k !in times) { times[k] = t; changed = true }
-        if (changed) store.write(toJson())
+        val missing = stamps.filterKeys { it !in times }
+        if (missing.isEmpty()) return
+        times.putAll(missing)
+        store.write(toJson())
     }
 
     /** Record the created time a file carries itself, which outranks any first-seen stamp. */
@@ -47,11 +46,7 @@ class CreationTimeStore(private val store: JsonStore) {
     /** Carry created times across a rename or move that changed the document id, a folder's descendants included. */
     @Synchronized
     fun rekeyTree(from: String, to: String) {
-        val moves = times.keys.mapNotNull { k -> DocKeys.moved(k, from, to)?.let { k to it } }
-        if (moves.isEmpty()) return
-        val values = moves.map { (old, _) -> times.remove(old) }
-        moves.forEachIndexed { i, (_, new) -> values[i]?.let { times[new] = it } }
-        store.write(toJson())
+        if (times.moveDocumentKeys(from, to)) store.write(toJson())
     }
 
     /** Forget the created time for every key matching [predicate] — a deleted file, or a deleted folder's whole subtree. */
@@ -67,9 +62,5 @@ class CreationTimeStore(private val store: JsonStore) {
         store.write(JSONObject())
     }
 
-    private fun toJson(): JSONObject {
-        val o = JSONObject()
-        for ((k, v) in times) o.put(k, v)
-        return o
-    }
+    private fun toJson(): JSONObject = JSONObject(times)
 }

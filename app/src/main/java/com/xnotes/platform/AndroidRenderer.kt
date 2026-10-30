@@ -44,14 +44,15 @@ class AndroidRenderer(private val canvas: Canvas) : Renderer {
     private val layerPaint = Paint()
     private val mathInk by lazy { MathRendering.Ink() }
 
-    /** The platform blend for [blend], or null when it has none (SRC_OVER, or below API 29). */
-    private fun nativeBlend(blend: BlendMode): android.graphics.BlendMode? {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
-        return when (blend) {
+    /** Apply a separable blend when supported; a reset Paint already handles SRC_OVER. */
+    private fun Paint.applyBlendMode(blend: BlendMode): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return false
+        blendMode = when (blend) {
             BlendMode.MULTIPLY -> android.graphics.BlendMode.MULTIPLY
             BlendMode.SCREEN -> android.graphics.BlendMode.SCREEN
-            BlendMode.SRC_OVER -> null
+            BlendMode.SRC_OVER -> return false
         }
+        return true
     }
 
     private val clipBounds = android.graphics.Rect()
@@ -88,10 +89,9 @@ class AndroidRenderer(private val canvas: Canvas) : Renderer {
     // work the same in the transparent ink cache and on the composed screen. Below
     // API 29 (and for SRC_OVER) we just use plain alpha compositing.
     override fun saveLayerBlended(bounds: Rect, alpha: Double, blend: BlendMode) {
-        val native = nativeBlend(blend) ?: return saveLayerAlpha(bounds, alpha)
         layerPaint.reset()
+        if (!layerPaint.applyBlendMode(blend)) return saveLayerAlpha(bounds, alpha)
         layerPaint.alpha = (alpha.coerceIn(0.0, 1.0) * 255).toInt()
-        layerPaint.blendMode = native
         canvas.saveLayer(
             bounds.left.toFloat(), bounds.top.toFloat(), bounds.right.toFloat(), bounds.bottom.toFloat(),
             layerPaint,
@@ -309,7 +309,7 @@ class AndroidRenderer(private val canvas: Canvas) : Renderer {
         rasterBlendPaint.isFilterBitmap = true
         rasterBlendPaint.isDither = true
         rasterBlendPaint.alpha = (alpha.coerceIn(0.0, 1.0) * 255).toInt()
-        nativeBlend(blend)?.let { rasterBlendPaint.blendMode = it }
+        rasterBlendPaint.applyBlendMode(blend)
         val srcRect = src?.let {
             android.graphics.Rect(it.left.toInt(), it.top.toInt(), it.right.toInt(), it.bottom.toInt())
         }

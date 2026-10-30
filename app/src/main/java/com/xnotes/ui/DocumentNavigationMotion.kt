@@ -50,17 +50,17 @@ internal fun documentExit(distancePx: Int): ExitTransition =
 
 /** Keep Home's scroll/navigation state mounted while its whole surface leaves and re-enters. */
 @Composable
-internal fun Transition<Boolean>.documentBackstageMotion(): Modifier {
+internal fun Modifier.documentBackstageMotion(transition: Transition<Boolean>): Modifier {
     val distance = documentNavigationDistancePx().toFloat()
-    val offset = animateFloat(
+    val offset = transition.animateFloat(
         transitionSpec = { tween(DOCUMENT_NAVIGATION_DURATION_MS, easing = documentNavigationEasing) },
         label = "home document offset",
     ) { open -> if (open) -distance else 0f }
-    val opacity = animateFloat(
+    val opacity = transition.animateFloat(
         transitionSpec = { XnotesMotion.fastEffectsSpec() },
         label = "home document opacity",
     ) { open -> if (open) 0f else 1f }
-    return Modifier.graphicsLayer {
+    return graphicsLayer {
         translationX = offset.value
         alpha = opacity.value
     }

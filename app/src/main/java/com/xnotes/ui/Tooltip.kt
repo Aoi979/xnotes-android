@@ -92,16 +92,18 @@ private fun keyboardAttached(): Boolean {
     return c.keyboard != Configuration.KEYBOARD_NOKEYS && c.hardKeyboardHidden == Configuration.HARDKEYBOARDHIDDEN_NO
 }
 
-private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.trackHover(tip: TipState) = awaitPointerEventScope {
-    while (true) {
-        val e = awaitPointerEvent(PointerEventPass.Initial)
-        val change = e.changes.firstOrNull() ?: continue
-        when (e.type) {
-            PointerEventType.Enter ->
-                if (!change.pressed && (change.type == PointerType.Stylus || change.type == PointerType.Eraser || change.type == PointerType.Mouse)) tip.enter()
-            PointerEventType.Exit -> tip.exit()
-            PointerEventType.Press, PointerEventType.Scroll -> tip.press()
-            PointerEventType.Release -> tip.release()
+private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.trackHover(tip: TipState) {
+    awaitPointerEventScope {
+        while (true) {
+            val e = awaitPointerEvent(PointerEventPass.Initial)
+            val change = e.changes.firstOrNull() ?: continue
+            when (e.type) {
+                PointerEventType.Enter ->
+                    if (!change.pressed && (change.type == PointerType.Stylus || change.type == PointerType.Eraser || change.type == PointerType.Mouse)) tip.enter()
+                PointerEventType.Exit -> tip.exit()
+                PointerEventType.Press, PointerEventType.Scroll -> tip.press()
+                PointerEventType.Release -> tip.release()
+            }
         }
     }
 }

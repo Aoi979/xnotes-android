@@ -1,6 +1,7 @@
 package com.xnotes.platform
 
 import com.xnotes.canvas.ViewOverrides
+import com.xnotes.core.util.moveDocumentKeys
 import org.json.JSONObject
 
 /**
@@ -12,23 +13,22 @@ import org.json.JSONObject
  */
 class ViewStateStore(private val store: JsonStore) {
 
-    class View(val zoom: Double, val scrollX: Double, val scrollY: Double, val overrides: ViewOverrides)
+    data class View(val zoom: Double, val scrollX: Double, val scrollY: Double, val overrides: ViewOverrides)
 
     private val views: MutableMap<String, View> = load()
 
     private fun load(): MutableMap<String, View> {
-        val out = HashMap<String, View>()
-        val o = store.read()
-        for (key in o.keys()) {
-            val e = o.optJSONObject(key) ?: continue
-            out[key] = View(
-                e.optDouble("zoom", 0.0),
-                e.optDouble("scrollX", 0.0),
-                e.optDouble("scrollY", 0.0),
-                ViewOverridesJson.read(e),
-            )
-        }
-        return out
+        val saved = store.read()
+        return saved.keys().asSequence().mapNotNull { key ->
+            saved.optJSONObject(key)?.let { entry ->
+                key to View(
+                    zoom = entry.optDouble("zoom", 0.0),
+                    scrollX = entry.optDouble("scrollX", 0.0),
+                    scrollY = entry.optDouble("scrollY", 0.0),
+                    overrides = ViewOverridesJson.read(entry),
+                )
+            }
+        }.toMap(mutableMapOf())
     }
 
     @Synchronized
@@ -55,11 +55,7 @@ class ViewStateStore(private val store: JsonStore) {
     /** Carry remembered views across a rename or move that changed the document id, a folder's descendants included. */
     @Synchronized
     fun rekeyTree(from: String, to: String) {
-        val moves = views.keys.mapNotNull { k -> com.xnotes.core.util.DocKeys.moved(k, from, to)?.let { k to it } }
-        if (moves.isEmpty()) return
-        val values = moves.map { (old, _) -> views.remove(old) }
-        moves.forEachIndexed { i, (_, new) -> values[i]?.let { views[new] = it } }
-        store.write(toJson())
+        if (views.moveDocumentKeys(from, to)) store.write(toJson())
     }
 
     /** Forget every remembered view (e.g. when the granted folder is released). */
@@ -69,12 +65,13 @@ class ViewStateStore(private val store: JsonStore) {
         store.write(JSONObject())
     }
 
-    private fun toJson(): JSONObject {
-        val o = JSONObject()
-        for ((k, v) in views) {
-            val e = JSONObject().put("zoom", v.zoom).put("scrollX", v.scrollX).put("scrollY", v.scrollY)
-            o.put(k, ViewOverridesJson.write(e, v.overrides))
+    private fun toJson(): JSONObject = JSONObject().apply {
+        for ((key, view) in views) {
+            val entry = JSONObject()
+                .put("zoom", view.zoom)
+                .put("scrollX", view.scrollX)
+                .put("scrollY", view.scrollY)
+            put(key, ViewOverridesJson.write(entry, view.overrides))
         }
-        return o
     }
 }

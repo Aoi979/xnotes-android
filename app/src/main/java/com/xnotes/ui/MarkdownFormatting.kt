@@ -103,9 +103,9 @@ internal fun MarkdownFormattingToolbar(session: MarkdownSession, onTable: () -> 
             }
         }, confirmButton = {
             TextButton(enabled = target != null, onClick = {
-                if (session.input.text.toString() != snapshot.text) onUnsupported() else {
-                    val title = label.ifBlank { target!! }.replace("[", "\\[").replace("]", "\\]")
-                    val destination = target!!.replace("<", "%3C").replace(">", "%3E")
+                if (target == null || session.input.text.toString() != snapshot.text) onUnsupported() else {
+                    val title = label.ifBlank { target }.replace("[", "\\[").replace("]", "\\]")
+                    val destination = target.replace("<", "%3C").replace(">", "%3E")
                     val value = "[$title](<$destination>)"
                     val at = minOf(snapshot.start, snapshot.end)
                     session.apply(MarkdownEdit(snapshot.text.replaceRange(at, maxOf(snapshot.start, snapshot.end), value), at + value.length))

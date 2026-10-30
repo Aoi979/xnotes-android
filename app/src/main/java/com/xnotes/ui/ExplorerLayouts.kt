@@ -116,7 +116,7 @@ internal fun GridBody(b: ExplorerBody, state: LazyGridState, columns: Int, chips
         b.groups.forEach { g ->
             if (g.label.isNotEmpty()) {
                 item(key = "group:${g.key}", span = { GridItemSpan(maxLineSpan) }, contentType = "header") {
-                    GroupHeader(g.label, g.items.size, g.color, Modifier.animateItem(fadeInSpec = materialItemFadeSpec, placementSpec = materialItemPlacementSpec, fadeOutSpec = materialItemFadeSpec).padding(top = 2.dp))
+                    GroupHeader(g.label, g.items.size, modifier = Modifier.animateItem(fadeInSpec = materialItemFadeSpec, placementSpec = materialItemPlacementSpec, fadeOutSpec = materialItemFadeSpec).padding(top = 2.dp), color = g.color)
                 }
             }
             items(g.items, key = { it.documentUri }, contentType = { if (it.isDir) "folderCard" else "file" }) { e ->
@@ -168,7 +168,7 @@ internal fun ListBody(
         b.groups.forEach { g ->
             if (g.label.isNotEmpty()) {
                 item(key = "group:${g.key}", contentType = "header") {
-                    GroupHeader(g.label, g.items.size, g.color, Modifier.animateItem(fadeInSpec = materialItemFadeSpec, placementSpec = materialItemPlacementSpec, fadeOutSpec = materialItemFadeSpec).padding(start = 8.dp, top = 10.dp))
+                    GroupHeader(g.label, g.items.size, modifier = Modifier.animateItem(fadeInSpec = materialItemFadeSpec, placementSpec = materialItemPlacementSpec, fadeOutSpec = materialItemFadeSpec).padding(start = 8.dp, top = 10.dp), color = g.color)
                 }
             }
             items(g.items, key = { it.documentUri }, contentType = { "row" }) { e ->

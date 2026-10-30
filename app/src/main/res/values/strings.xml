@@ -720,7 +720,6 @@
     <string name="pages">Pages</string>
     <string name="contents">Contents</string>
     <string name="bookmarks">Bookmarks</string>
-    <string name="selected">Selected</string>
     <string name="page_options">Page options</string>
     <string name="back_share_as">"‹  Share as"</string>
     <string name="image_png">Image (PNG)</string>
@@ -1363,7 +1362,7 @@
     <string name="md_align_left">Align column left</string>
     <string name="md_align_center">Center column</string>
     <string name="md_align_right">Align column right</string>
-    <string name="md_header_cell">Header %2$d</string>
+    <string name="md_header_cell">Header %1$d</string>
     <string name="md_body_cell">Row %1$d, column %2$d</string>
     <string name="md_edit_cells">Edit cells</string>
     <string name="md_table_unsupported">Select cells within one table, up to 60 rows and 12 columns. Edit irregular or nested tables in source.</string>

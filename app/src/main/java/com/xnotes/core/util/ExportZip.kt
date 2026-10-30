@@ -18,11 +18,11 @@ object ExportZip {
     /** The zip's entries for [picked], each folder before what it holds. */
     fun plan(picked: List<Node>): List<Entry> {
         // A pick that sits inside another picked folder lands only there.
-        val inside = HashSet<String>()
+        val inside = hashSetOf<String>()
         for (n in picked) if (n.isDir) collectKeys(n.children, inside)
-        val seen = HashSet<String>()
+        val seen = hashSetOf<String>()
         val tops = picked.filter { it.key !in inside && seen.add(it.key) }
-        return ArrayList<Entry>().also { place(tops, "", it) }
+        return buildList { place(tops, "", this) }
     }
 
     private fun collectKeys(nodes: List<Node>, into: MutableSet<String>) {
@@ -33,7 +33,7 @@ object ExportZip {
     }
 
     private fun place(nodes: List<Node>, prefix: String, out: MutableList<Entry>) {
-        val taken = HashSet<String>()
+        val taken = hashSetOf<String>()
         for (n in nodes.sortedWith(compareBy<Node>({ !it.isDir }, { it.name.lowercase() }, { it.name }))) {
             if (n.isDir) {
                 val dir = "$prefix${unique(segment(n.name), "", taken)}/"

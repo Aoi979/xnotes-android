@@ -6,6 +6,7 @@ import android.os.Handler
 import android.os.Looper
 import android.view.PixelCopy
 import android.view.Window
+import com.xnotes.platform.setUnbufferedStrokeInput
 import com.xnotes.core.geometry.Pt
 import com.xnotes.core.geometry.Rect
 import com.xnotes.core.infinite.InkPass
@@ -186,7 +187,7 @@ class FrontInk(
         live = false
         // Strokes that joined this one are still the pad's, and the pad is about to be wiped.
         settle()
-        view.setUnbufferedStylus(false)
+        view.setUnbufferedStrokeInput(false)
         pad.endStroke()
     }
 
@@ -246,7 +247,7 @@ class FrontInk(
         pad.setTail(emptyList())
         live = true
         runPoints = FRONT_RUN_POINTS
-        view.setUnbufferedStylus(true)
+        view.setUnbufferedStrokeInput(true)
         return true
     }
 
@@ -311,7 +312,7 @@ class FrontInk(
         // A shorter run on the front buffer, because there the tail is what a present has to clear
         // and rebuild, and its extent is the size of everything that present does.
         runPoints = FRONT_RUN_POINTS
-        view.setUnbufferedStylus(true)
+        view.setUnbufferedStrokeInput(true)
         return true
     }
 
@@ -360,7 +361,7 @@ class FrontInk(
         handoverTail = tailPart
         tailPart = null
         pad.freeze()
-        view.setUnbufferedStylus(false)
+        view.setUnbufferedStrokeInput(false)
     }
 
     /**

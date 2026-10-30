@@ -348,7 +348,7 @@ internal fun ExplorerIcon(icon: ImageVector, desc: String, tint: Color? = null, 
 
 /** A heading over one group of items: its name (with the colour's dot when grouped by colour) and how many it holds. */
 @Composable
-internal fun GroupHeader(label: String, count: Int, color: Rgba? = null, modifier: Modifier = Modifier) {
+internal fun GroupHeader(label: String, count: Int, modifier: Modifier = Modifier, color: Rgba? = null) {
     val palette = LocalPalette.current
     Row(modifier.height(30.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         if (color != null) Box(Modifier.size(10.dp).clip(CircleShape).background(codeTint(color, palette)))

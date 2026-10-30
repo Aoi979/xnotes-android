@@ -1,6 +1,6 @@
 package com.xnotes.platform
 
-import android.content.Context
+import android.app.Application
 import android.media.MediaRecorder
 import android.os.Build
 import java.io.File
@@ -12,7 +12,7 @@ import java.io.FileOutputStream
  * carry on. Voice quality, 64 kbps mono. Pausing uses the recorder's own pause where it has one,
  * else ends the run and the next [resume] appends a new one.
  */
-class AudioRecorder(private val context: Context, val file: File) {
+class AudioRecorder(private val application: Application, val file: File) {
 
     private var recorder: MediaRecorder? = null
     private var out: FileOutputStream? = null
@@ -20,7 +20,7 @@ class AudioRecorder(private val context: Context, val file: File) {
     /** Start, or start again after a stop, appending to [file]. False when the microphone cannot be had. */
     fun start(): Boolean {
         release()
-        val r = if (Build.VERSION.SDK_INT >= 31) MediaRecorder(context) else @Suppress("DEPRECATION") MediaRecorder()
+        val r = if (Build.VERSION.SDK_INT >= 31) MediaRecorder(application) else @Suppress("DEPRECATION") MediaRecorder()
         return try {
             val stream = FileOutputStream(file, true)
             out = stream

@@ -10,7 +10,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.xnotes.R
@@ -23,9 +22,9 @@ import com.xnotes.R
  */
 @Composable
 fun XnotesLoader(modifier: Modifier = Modifier) {
-    val cfg = LocalConfiguration.current
+    val window = windowSizeDp()
     // Scale with the short edge but cap it, so phones render big without tablets ballooning.
-    val shortEdge = minOf(cfg.screenWidthDp, cfg.screenHeightDp)
+    val shortEdge = minOf(window.width.value, window.height.value)
     val side = minOf(shortEdge * 0.55f, 288f).dp
     Box(
         modifier.fillMaxSize().background(Color.Black),

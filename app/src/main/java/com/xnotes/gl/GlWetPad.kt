@@ -209,7 +209,7 @@ class GlWetPad(context: Context, onTop: Boolean = false) : SurfaceView(context),
             .setName("xnotes-wet-pad")
             .setParent(parent)
             .setBufferSize(frame.width().coerceAtLeast(1), frame.height().coerceAtLeast(1))
-            .setFormat(android.graphics.PixelFormat.TRANSLUCENT)
+            .setFormat(android.graphics.PixelFormat.RGBA_8888)
             .build()
         // Above the SurfaceView's own layer, which never gets a buffer now.
         SurfaceControl.Transaction().use { it.setLayer(child, 1).apply() }

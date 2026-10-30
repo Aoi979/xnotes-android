@@ -3,7 +3,7 @@ package com.xnotes.ui
 import com.xnotes.ui.theme.audioLook
 import com.xnotes.core.model.withoutAudio
 import android.content.Context
-import android.util.LruCache
+import androidx.core.net.toUri
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -11,7 +11,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asImageBitmap
 import com.xnotes.R
 import com.xnotes.canvas.CanvasState
 import com.xnotes.canvas.CanvasView
@@ -132,7 +131,6 @@ import java.io.InputStream
 import java.io.OutputStream
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -439,38 +437,23 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     private val session = com.xnotes.platform.SessionStore(sessionDir, codec, pdfDir, imageDir)
     private val canvasSession = com.xnotes.platform.CanvasSessionStore(sessionDir, canvasCodec, imageDir)
     private val markdownStore = com.xnotes.platform.MarkdownStore(appContext, sessionDir)
-    private val viewStates = com.xnotes.platform.ViewStateStore(com.xnotes.platform.JsonStore.viewStates(appContext))
+    private val documentStores = com.xnotes.platform.DocumentStores.forApp(appContext)
+    private val viewStates = documentStores.views
     private var lastSessionContentVersion = -1
     private var sessionLoaded = false
 
-    // The disk cache is shared by both panes and remembers which theme produced its pixels.
-    private val thumbCache = com.xnotes.platform.NoteThumbnailCache(java.io.File(appContext.filesDir, "note_thumbs"))
-    @Volatile private var thumbnailGeneration = -1L
-    private var thumbnailTheme: String? = null
-    var thumbnailVersion by mutableStateOf(0)
-        private set
-    /** In-memory note-tile thumbnails keyed by SAF URI, bounded by bytes (Compose owns the pixels —
-     *  no manual recycle). */
-    private val noteThumbs = object : LruCache<String, ImageBitmap>(32 * 1024 * 1024) {
-        override fun sizeOf(key: String, value: ImageBitmap) = value.width * value.height * 4
-    }
-    /** App-tracked creation times for explorer ordering (SAF exposes only last-modified). */
-    private val createdStore = com.xnotes.platform.CreationTimeStore(com.xnotes.platform.JsonStore.createdTimes(appContext))
-    private val docMeta = com.xnotes.platform.DocMetaStore(com.xnotes.platform.JsonStore.docMeta(appContext))
-    /** A single lowest-priority background thread renders explorer thumbnails one at a time, so a
-     *  folder of many notes fills in gradually without ever competing with the UI/render threads. */
-    private val thumbDispatcher = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
-        Thread(r, "note-thumbs").apply { priority = Thread.MIN_PRIORITY }
-    }.asCoroutineDispatcher()
-    /**
-     * Side-panel page thumbnails, rendered once and reused so scrolling the panel doesn't re-render.
-     * Keyed by [Page] **identity** (not index) so a drag-reorder keeps each page's bitmap instead of
-     * re-rendering every row; the whole cache is dropped when [contentVersion] moves (a real edit).
-     */
-    private val pageThumbs = object : LruCache<Page, ImageBitmap>(24 * 1024 * 1024) {
-        override fun sizeOf(key: Page, value: ImageBitmap) = value.width * value.height * 4
-    }
-    private var pageThumbsVersion = -1
+    /** Explorer previews own their caches, queue and transient reads outside the editor. */
+    private val createdStore = documentStores.created
+    private val docMeta = documentStores.metadata
+    private val thumbnails = DocumentThumbnails(
+        viewContext,
+        com.xnotes.platform.TransientDocuments(appContext.contentResolver, codec, canvasCodec, pdfDir, imageDir),
+        markdownStore,
+        captureStyle = ::thumbnailStyle,
+        rememberCreated = { uri, created -> createdStore.put(documentKey(uri), created) },
+    )
+    val thumbnailVersion: Int get() = thumbnails.version
+    private val pageThumbs = PageThumbnails()
     /** In-memory caches so reopening the backstage paints instantly (seed first, refresh after). */
     private val browseCache = java.util.concurrent.ConcurrentHashMap<String, List<BrowseEntry>>()
     private val rootNameCache = java.util.concurrent.ConcurrentHashMap<String, String>()
@@ -753,7 +736,6 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             if (markdownThumbSnapshot != stamp) {
                 markdownThumbSnapshot = stamp
                 invalidateThumb(source.uri!!)
-                thumbnailVersion++
             }
         }
     }
@@ -1711,9 +1693,6 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     /** Formulas set off the main thread landing: a box moves the layout, a raster only repaints. */
     private val mathLanded = com.xnotes.platform.MathRendering.Listener { sized, idle -> onMathLanded(sized, idle) }
 
-    /** Set when a side-panel thumbnail stood in for a formula, so they render again once it lands. */
-    @Volatile private var thumbsAwaitMath = false
-
     init {
         com.xnotes.platform.MathRendering.addListener(mathLanded)
         if (pane == Pane.PRIMARY) reloadTemplateLibrary()
@@ -2228,11 +2207,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     private fun onMathLanded(sized: Boolean, idle: Boolean) {
         if (sized && publishedFlow?.frame?.hasPendingMath == true) republishForMath()
-        if (idle && thumbsAwaitMath) {
-            thumbsAwaitMath = false
-            synchronized(pageThumbs) { pageThumbs.evictAll() }
-            pdfThumbTick++
-        }
+        if (idle && pageThumbs.onMathReady()) pdfThumbTick++
         onRender()
     }
 
@@ -2592,49 +2567,27 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             ?: run { message = appContext.getString(R.string.err_clipboard_no_image) }
     }
 
-    /**
-     * A [FlowLayout] carrying the active code theme, for transient layout passes (PDF
-     * export, explorer tiles). The async [highlightCache] only feeds the live published
-     * layout, so [flow]'s code blocks are parsed synchronously here — cheap (blocks are
-     * small) and safe off-thread (the highlighter is stateless per call).
-     */
-    private fun themedFlowLayout(flow: com.xnotes.core.text.TextFlow): FlowLayout {
-        val layout = FlowLayout(textMeasurer, com.xnotes.platform.MathRendering.Blocking)
-        val theme = activeCodeTheme()
-        layout.codeBackground = { theme.background }
-        layout.autoColor = { defaultTextColor() }
-        val accent = palette.accent
-        layout.accentColor = { accent }
-        val rule = tableRuleColor()
-        layout.ruleColor = { rule }
-        val hl = highlighter ?: return layout
-        val spans = HashMap<Paragraph, List<com.xnotes.core.text.CodeSpan>>()
-        var i = 0
-        while (i < flow.paragraphs.size) {
-            val lang = flow.paragraphs[i].codeLang
-            if (lang.isNullOrEmpty() || !hl.supports(lang)) {
-                i++
-                continue
-            }
-            val start = i
-            while (i < flow.paragraphs.size && flow.paragraphs[i].codeLang == lang) i++
-            val paras = flow.paragraphs.subList(start, i)
-            // Contiguous same-language paragraphs parse as ONE text, like [scheduleHighlight].
-            val sorted = hl.highlight(paras.joinToString("\n") { it.plainText() }, lang)
-                ?.sortedBy { it.start } ?: continue
-            var offset = 0
-            for (p in paras) {
-                val len = p.length
-                spans[p] = sorted.mapNotNull { s ->
-                    val a = (s.start - offset).coerceAtLeast(0)
-                    val b = (s.end - offset).coerceAtMost(len)
-                    if (b > a) theme.colorFor(s.capture)?.let { com.xnotes.core.text.CodeSpan(a, b, it) } else null
-                }
-                offset += len + 1
-            }
-        }
-        layout.codeSpans = { spans[it] }
-        return layout
+    /** Private export/preview passes share an immutable appearance, separate from live layout. */
+    private fun flowRenderStyle() = com.xnotes.platform.FlowRenderStyle(
+        textMeasurer, highlighter, activeCodeTheme(), defaultTextColor(), palette.accent, tableRuleColor(),
+    )
+
+    private fun themedFlowLayout(flow: com.xnotes.core.text.TextFlow): FlowLayout = flowRenderStyle().layout(flow)
+
+    private fun thumbnailStyle(uri: String): ThumbnailStyle {
+        val vs = viewSettingsFor(uri)
+        val style = preferences.markdownStyle
+        val colors = palette
+        return ThumbnailStyle(
+            renderer = com.xnotes.platform.DocumentThumbnailRenderer(state.palette.paper, state.pageColorOverride, flowRenderStyle()),
+            filter = com.xnotes.canvas.PdfPageFilter.forView(vs, colors.isDark),
+            rotation = vs.rotation,
+            markdownStyle = style,
+            palette = colors,
+            markdownRenderer = markdownRenderer(style, colors),
+            resourceParent = markdown?.takeIf { it.uri == uri }?.resourceParent,
+            browseRoot = browseRoot,
+        )
     }
 
     /**
@@ -2796,12 +2749,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     /** View defaults also change closed notes' previews, including cached files on disk. */
     private fun refreshThumbnailTheme() {
         val theme = "$palette|${state.pageColorOverride}|$viewDefaults|${settings.prefs.markdownStyle}"
-        if (thumbnailTheme == theme) return
-        thumbnailTheme = theme
-        thumbnailGeneration = thumbCache.useTheme(theme)
-        synchronized(noteThumbs) { noteThumbs.evictAll() }
-        synchronized(pageThumbs) { pageThumbs.evictAll() }
-        thumbnailVersion++
+        if (thumbnails.useTheme(theme)) pageThumbs.clear()
     }
 
     /** Whether typed markdown markers convert; the text tool's config popup toggles it. */
@@ -3499,7 +3447,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val r = surface.renderer()
         r.scale(scale, scale)
         r.translate(-cover.left, -cover.top)
-        if (!active()) return null
+        if (!active()) { surface.bitmap.recycle(); return null }
         // Paints the PDF page too, not just the ruling.
         com.xnotes.platform.PdfSource.withPriority(com.xnotes.platform.PdfPriority.THUMBNAIL) {
             paintBackground(page, r, scale, cover, lineFloor / scale)
@@ -3511,10 +3459,10 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         (r as? com.xnotes.platform.AndroidRenderer)?.let { ar ->
             ar.mathPace = com.xnotes.platform.MathRendering.Pace.STILL
             state.paintMath?.invoke(page, ar, cover)
-            if (ar.standIns > 0) thumbsAwaitMath = true
+            if (ar.standIns > 0) pageThumbs.awaitingMath = true
         }
         for (i in under until items.size) {
-            if (!active()) return null
+            if (!active()) { surface.bitmap.recycle(); return null }
             items[i].paint(r)
         }
         // Painting built this page's ribbons, and the grid renders pages nowhere near the viewport.
@@ -3541,38 +3489,20 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     }
 
     /** An already-rendered side-panel thumbnail for [page] at the current content, or null. */
-    fun cachedPageThumbnail(page: Page): ImageBitmap? = synchronized(pageThumbs) {
-        if (pageThumbsVersion != contentVersion) {
-            pageThumbs.evictAll()
-            pageThumbsVersion = contentVersion
-        }
-        pageThumbs.get(page)
-    }
+    fun cachedPageThumbnail(page: Page): ImageBitmap? = pageThumbs.get(page, contentVersion)
 
-    /**
-     * The side-panel thumbnail for [page], rendered off the main thread and cached so scrolling the
-     * panel reuses bitmaps instead of re-rendering each page on every pass — that re-render churn
-     * (heap allocation + GC) was what made the panel scroll janky. Keyed by page identity, so a
-     * reorder keeps it; dropped wholesale when [contentVersion] moves (see [cachedPageThumbnail]).
-     */
+    /** Live-page painting stays beside canvas state; the cache owns invalidation and publication. */
     suspend fun pageThumbnail(page: Page, widthPx: Int): ImageBitmap? {
-        val generation = thumbnailGeneration
+        val current = thumbnails.generationGuard()
         val version = contentVersion
+        val request = pageThumbs.request(version)
         cachedPageThumbnail(page)?.let { return it }
         return withContext(Dispatchers.Default) {
             cachedPageThumbnail(page)?.let { return@withContext it }
-            // Render in page space sized so the rotated result lands at [widthPx] wide.
             val renderW = (state.outerW(page) * (widthPx / state.displayW(page))).roundToInt().coerceAtLeast(1)
-            val bmp = renderThumbnail(page, renderW, active = { isActive && isCurrentThumbnail(generation) }, lineFloor = 1.0)
+            val bmp = renderThumbnail(page, renderW, active = { isActive && current() }, lineFloor = 1.0)
                 ?.let { rotateForView(it) } ?: return@withContext null
-            synchronized(pageThumbs) {
-                if (!isActive || !isCurrentThumbnail(generation) || version != contentVersion) {
-                    bmp.recycle()
-                    null
-                } else {
-                    bmp.asImageBitmap().also { pageThumbs.put(page, it) }
-                }
-            }
+            pageThumbs.publish(page, bmp, request, isActive && current() && version == contentVersion)
         }
     }
 
@@ -3581,7 +3511,13 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val deg = viewSettings.rotation
         if (deg == 0) return bmp
         val m = android.graphics.Matrix().apply { postRotate(deg.toFloat()) }
-        return android.graphics.Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, m, true)
+        return try {
+            android.graphics.Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, m, true)
+                .also { if (it !== bmp) bmp.recycle() }
+        } catch (error: Throwable) {
+            bmp.recycle()
+            throw error
+        }
     }
 
     fun addBookmark(label: String) {
@@ -3638,7 +3574,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                     " + assets ${timing.assetsMs} + compact ${timing.compactMs}, $fileBytes bytes",
             )
             if (doc == null) { message = appContext.getString(R.string.err_open_that_note); return }
-            if (openCancelled.get()) { doc.pdfFile?.delete(); deleteImageTemps(doc); return } // tapped Cancel mid-read; stay put
+            if (openCancelled.get()) { doc.pdfFile?.delete(); com.xnotes.platform.deleteTransientResources(doc); return } // tapped Cancel mid-read; stay put
             doc.path = uri
             doc.displayName = name
             doc.dirty = false
@@ -3665,19 +3601,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     /** Aborts an in-flight open (the dialog's Cancel) so the loaded note is discarded, not shown. */
     fun cancelOpenInProgress() { openCancelled.set(true) }
 
-    fun save(output: OutputStream, uri: String, name: String? = null) {
-        try {
-            synchronized(saveLock) { codec.write(state.document, output) }
-            state.document.path = uri
-            if (name != null) state.document.displayName = name
-            state.document.dirty = false
-            maybeBindAutosave(uri) // saving into the folder makes it autosave thereafter
-            refreshContent()
-            invalidateThumb(uri) // content changed; re-render its tile next time it's shown
-        } catch (e: Throwable) {
-            // Throwable, not Exception: an OutOfMemoryError mid-encode must surface a message, not crash.
-            message = appContext.getString(R.string.err_save_note)
-        }
+    private sealed interface ExplicitNoteSave {
+        data class Written(val displayName: String?) : ExplicitNoteSave
+        data object Failed : ExplicitNoteSave
     }
 
     /**
@@ -3705,25 +3631,34 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val pending = noteWriteJob // captured, so the join below is on the previous write, not itself
         noteWriteJob = autosaveScope.launch {
             pending?.join() // a write already going out finishes first rather than racing this one
-            val ok = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                writeNoteSafely(uri, snapshot)
+            val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching {
+                    appContext.contentResolver.takePersistableUriPermission(
+                        uri.toUri(),
+                        android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                    )
+                }
+                if (writeNoteSafely(uri, snapshot)) ExplicitNoteSave.Written(queryDisplayName(uri.toUri()))
+                else ExplicitNoteSave.Failed
             }
             savingNote = false
-            if (ok) {
+            if (result is ExplicitNoteSave.Written) {
                 // The note may have been switched while the bytes were going out; only the document
                 // this save belongs to may have its path and autosave binding touched.
                 if (state.document === doc) {
                     doc.path = uri
+                    result.displayName?.let { doc.displayName = it }
                     maybeBindAutosave(uri)
                     refreshContent()
                 }
                 invalidateThumb(uri)
             } else {
-                if (wasDirty && state.document === doc) { doc.dirty = true; dirty = true }
+                if (wasDirty) doc.dirty = true
+                if (state.document === doc) dirty = doc.dirty
                 message = appContext.getString(R.string.err_save_note)
             }
             state.lastSaveTotalMs = msSince(startNs)
-            onDone(ok)
+            onDone(result is ExplicitNoteSave.Written)
         }
     }
 
@@ -3750,361 +3685,23 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         }
     }.getOrNull()
 
-    /** The first page of a loaded document rendered to a [sidePx]×[sidePx] tile, cropped to the page
-     *  top (the square surface clips the overflow). Uses [itemsSnapshot] because the close-hook renders
-     *  the live document off-thread, which a main-thread edit can mutate underneath it. [filter] and
-     *  [rotation] are the note's own View settings resolved against the global defaults. */
-    private fun renderDocThumbnailSquare(doc: Document, sidePx: Int, filter: com.xnotes.canvas.PdfPageFilter, rotation: Int = 0): android.graphics.Bitmap? {
-        val page = doc.pages.firstOrNull() ?: return null
-        val side = sidePx.coerceAtLeast(1)
-        val cover = exportFootprint(doc, page)
-        val turned = rotation == 90 || rotation == 270
-        val shownW = if (turned) cover.h else cover.w
-        val shownH = if (turned) cover.w else cover.h
-        // An upright page shows its top across the whole tile.
-        if (!turned && shownW <= shownH) return paintDocPage(doc, 0, side, side, side.toDouble() / cover.w, rotation, filter)
-        // Otherwise the page as shown spans the tile's width: centred top to bottom when it's wider than tall.
-        val whole = renderDocPage(doc, 0, (side * shownH / shownW).roundToInt().coerceAtLeast(1), filter, rotation) ?: return null
-        val tile = com.xnotes.platform.AndroidRasterSurface.create(side, side)
-        tile.fill(thumbnailPaper(doc, page, filter))
-        android.graphics.Canvas(tile.bitmap).drawBitmap(whole, 0f, if (shownW > shownH) (side - whole.height) / 2f else 0f, null)
-        whole.recycle()
-        return tile.bitmap
-    }
+    /** Preview entry points remain stable; the service owns rendering, caching and file lifetimes. */
+    suspend fun canvasTileThumbnail(uri: String): ImageBitmap? = thumbnails.canvas(uri)
+    suspend fun tileThumbnail(uri: String, name: String): ImageBitmap? = thumbnails.tile(uri, name)
+    suspend fun noteTileThumbnail(uri: String): ImageBitmap? = thumbnails.note(uri)
+    fun cachedNoteTile(uri: String): ImageBitmap? = thumbnails.cachedTile(uri)
+    fun cachedPageThumb(uri: String): ImageBitmap? = thumbnails.cachedPage(uri)
+    suspend fun pageThumbnail(uri: String, name: String): ImageBitmap? = thumbnails.page(uri, name)
+    suspend fun pageStrip(uri: String, name: String, max: Int, heightPx: Int): List<ImageBitmap> =
+        thumbnails.strip(uri, name, max, heightPx)
 
-    /** Page [index] whole, [heightPx] tall once turned by [rotation], at the page's own shape. */
-    private fun renderDocPage(doc: Document, index: Int, heightPx: Int, filter: com.xnotes.canvas.PdfPageFilter, rotation: Int = 0): android.graphics.Bitmap? {
-        val page = doc.pages.getOrNull(index) ?: return null
-        val cover = exportFootprint(doc, page)
-        val turned = rotation == 90 || rotation == 270
-        val scale = heightPx.coerceAtLeast(1) / (if (turned) cover.w else cover.h)
-        val w = (cover.w * scale).roundToInt().coerceAtLeast(1)
-        val h = (cover.h * scale).roundToInt().coerceAtLeast(1)
-        return paintDocPage(doc, index, w, h, scale, rotation, filter)
-    }
+    private fun invalidateThumb(uri: String) = thumbnails.invalidate(uri)
 
-    private fun thumbnailPaper(doc: Document, page: Page, filter: com.xnotes.canvas.PdfPageFilter): Rgba =
-        (if (page.pdfPage != null) filter.paperColor else null)
-            ?: page.resolvedPageColor(doc, state.pageColorOverride) ?: state.palette.paper
-
-    /** Page [index] painted from its top-left corner at [scale] onto a [w]×[h] surface, then turned by [rotation]. */
-    private fun paintDocPage(
-        doc: Document, index: Int, w: Int, h: Int, scale: Double, rotation: Int, filter: com.xnotes.canvas.PdfPageFilter,
-    ): android.graphics.Bitmap? {
-        val page = doc.pages.getOrNull(index) ?: return null
-        val cover = exportFootprint(doc, page)
-        val surface = com.xnotes.platform.AndroidRasterSurface.create(w, h)
-        // Resolve the paper colour against this note's own document/page style (not the open note's).
-        surface.fill(thumbnailPaper(doc, page, filter))
-        val r = surface.renderer()
-        r.scale(scale, scale)
-        r.translate(-cover.left, -cover.top)
-        // A pixel per 300 px of tile, so the ruling survives the disk cache's half-size decode.
-        TemplateLibrary.paint(r, doc, page, cover, cover, maxOf(1.0, maxOf(w, h) / 300.0) / scale)
-        doc.pdfFile?.let { file ->
-            runCatching {
-                com.xnotes.platform.PdfSource.create(file)?.let { src ->
-                    page.pdfPage?.let { pi ->
-                        val pw = (page.width * scale).toInt().coerceAtLeast(1)
-                        val ph = (page.height * scale).toInt().coerceAtLeast(1)
-                        com.xnotes.platform.PdfSource.withPriority(com.xnotes.platform.PdfPriority.THUMBNAIL) {
-                            src.renderPage(pi, pw, ph, filter, page.markups)
-                        }?.let { bg ->
-                            r.drawRaster(bg, Rect(0.0, 0.0, page.width, page.height))
-                            bg.recycle()
-                        }
-                    }
-                    src.close()
-                }
-            }
-        }
-        if (page.pdfPage == null) MarkupPainter.paint(r, page.markups, doc.dpi / 72.0)
-        // A closed note's flow is laid out locally (the published snapshot serves the open note only),
-        // and only as far as this page, so a tile never sets the formulas further on.
-        PageLayers.paint(itemsSnapshot(page), {
-            if (!doc.flow.isEmpty) {
-                val frame = themedFlowLayout(doc.flow)
-                    .layout(doc.flow, doc.pages.map { PageBox(it.width, it.height) }, doc.dpi, throughPage = index, firstPage = flowStart(doc))
-                FlowPainter.paintPage(r, frame, index, Rect(0.0, 0.0, page.width, page.height))
-            }
-        }) { it.paint(r) }
-        val bmp = surface.bitmap
-        if (rotation == 0) return bmp
-        val m = android.graphics.Matrix().apply { postRotate(rotation.toFloat()) }
-        return android.graphics.Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, m, true)
-    }
-
-    /**
-     * The square tile for an infinite canvas: its content framed with a little margin, drawn with
-     * the ordinary CPU renderer rather than through GL. The items are the same [CanvasItem]s the
-     * paged note holds, so they paint themselves, and doing it here keeps thumbnails off the render
-     * thread entirely, with no readback and nothing that needs a live EGL context.
-     */
-    private fun renderCanvasThumbnailSquare(
-        doc: com.xnotes.core.infinite.InfiniteDocument,
-        sidePx: Int,
-    ): android.graphics.Bitmap? = renderCanvasThumbnail(doc, sidePx, sidePx)
-
-    /** A canvas's content framed with a little margin in a [wPx]×[hPx] tile. */
-    private fun renderCanvasThumbnail(
-        doc: com.xnotes.core.infinite.InfiniteDocument,
-        wPx: Int,
-        hPx: Int,
-    ): android.graphics.Bitmap? {
-        val w = wPx.coerceAtLeast(1)
-        val h = hPx.coerceAtLeast(1)
-        val surface = com.xnotes.platform.AndroidRasterSurface.create(w, h)
-        surface.fill(doc.background.paperColor ?: state.palette.paper)
-        val bounds = doc.contentBounds()
-        if (bounds != null && bounds.w > 0.0 && bounds.h > 0.0) {
-            val r = surface.renderer()
-            val margin = minOf(w, h) * 0.06
-            val scale = minOf((w - 2 * margin) / bounds.w, (h - 2 * margin) / bounds.h).coerceAtMost(1.0)
-            // Centre the content in the tile, whichever way round it is.
-            r.translate(
-                margin + (w - 2 * margin - bounds.w * scale) / 2.0,
-                margin + (h - 2 * margin - bounds.h * scale) / 2.0,
-            )
-            r.scale(scale, scale)
-            r.translate(-bounds.left, -bounds.top)
-            for (item in doc.items.toList()) item.paint(r)
-        }
-        return surface.bitmap
-    }
-
-    /** The square thumbnail for the canvas at [uri]; null when it is not a readable canvas. */
-    suspend fun canvasTileThumbnail(uri: String): ImageBitmap? {
-        val generation = thumbnailGeneration
-        synchronized(noteThumbs) { noteThumbs.get(uri)?.let { return it } }
-        return withContext(thumbDispatcher) {
-            delay(150)
-            if (!isActive || !isCurrentThumbnail(generation)) return@withContext null
-            synchronized(noteThumbs) { noteThumbs.get(uri)?.let { return@withContext it } }
-            val bmp = thumbCache.load(uri, generation) ?: run {
-                val doc = runCatching {
-                    appContext.contentResolver.openInputStream(android.net.Uri.parse(uri))?.use {
-                        canvasCodec.read(it, imageDir)
-                    }
-                }.getOrNull() ?: return@withContext null
-                doc.created?.let { createdStore.put(documentKey(uri), it) }
-                try {
-                    renderCanvasThumbnailSquare(doc, tilePx)?.also { thumbCache.store(uri, it, generation) }
-                        ?: return@withContext null
-                } finally {
-                    deleteCanvasImageTemps(doc)
-                }
-            }
-            publishThumbnail(uri, bmp, generation)
-        }
-    }
-
-    private fun isCurrentThumbnail(generation: Long): Boolean =
-        generation == thumbnailGeneration && thumbCache.isCurrent(generation)
-
-    private fun publishThumbnail(key: String, bitmap: android.graphics.Bitmap, generation: Long): ImageBitmap? =
-        synchronized(noteThumbs) {
-            if (!isCurrentThumbnail(generation)) {
-                bitmap.recycle()
-                null
-            } else {
-                bitmap.asImageBitmap().also { noteThumbs.put(key, it) }
-            }
-        }
-
-    /** The square tile for the document at [uri], whichever kind it is. */
-    suspend fun tileThumbnail(uri: String, name: String): ImageBitmap? =
-        if (DocumentKind.ofName(name) == DocumentKind.MARKDOWN) {
-            markdownThumbnail(uri, whole = false)
-        } else if (com.xnotes.core.util.DocumentKind.ofName(name) == com.xnotes.core.util.DocumentKind.CANVAS) {
-            canvasTileThumbnail(uri)
-        } else {
-            noteTileThumbnail(uri)
-        }
-
-    /** The square side (px) explorer tiles render at — fixed so rotation/column changes don't re-render. */
-    private val tilePx = 600
-
-    /** The height (px) whole-page thumbnails render at. */
-    private val pageThumbPx = 600
-
-    /** An already-loaded tile for [uri] at its current content, to seed the grid instantly. */
-    fun cachedNoteTile(uri: String): ImageBitmap? = synchronized(noteThumbs) { noteThumbs.get(uri) }
-
-    /**
-     * The square thumbnail for the note at [uri], for the explorer grid. Returns a cached hit
-     * (memory, then disk) as-is; otherwise renders off the main thread on the single low-priority
-     * [thumbDispatcher] (one note at a time) so a folder of many notes fills in gradually without
-     * stalling the UI. The cache is authoritative — a cached tile is shown unconditionally; a content
-     * change drops it ([invalidateThumb]) so it re-renders, and closing a note regenerates it.
-     */
-    suspend fun noteTileThumbnail(uri: String): ImageBitmap? {
-        val generation = thumbnailGeneration
-        synchronized(noteThumbs) { noteThumbs.get(uri)?.let { return it } }
-        return withContext(thumbDispatcher) {
-            delay(150) // let a quick scroll-past cancel this before any heavy work begins
-            if (!isActive || !isCurrentThumbnail(generation)) return@withContext null
-            synchronized(noteThumbs) { noteThumbs.get(uri)?.let { return@withContext it } }
-            val bmp = thumbCache.load(uri, generation) ?: run {
-                val doc = runCatching {
-                    appContext.contentResolver.openInputStream(android.net.Uri.parse(uri))?.use { codec.read(it, pdfDir, imageDir) }
-                }.getOrNull() ?: return@withContext null
-                doc.created?.let { createdStore.put(documentKey(uri), it) }
-                try {
-                    val vs = viewSettingsFor(uri)
-                    renderDocThumbnailSquare(doc, tilePx, pdfPageFilterFor(vs), vs.rotation)?.also { thumbCache.store(uri, it, generation) } ?: return@withContext null
-                } finally {
-                    doc.pdfFile?.delete() // transient doc loaded just for a thumbnail; drop its extracts
-                    deleteImageTemps(doc)
-                }
-            }
-            publishThumbnail(uri, bmp, generation)
-        }
-    }
-
-    /** The key a document's whole-page thumbnail is cached under, beside its square tile's. */
-    private fun pageThumbKey(uri: String): String = "$uri#page"
-
-    /** Markdown shares the bounded note cache, but its content digest also detects providers
-     * that do not advance their timestamps after an external edit. One HTML page supplies both
-     * the cropped tile and the whole-page preview, with the same styles as the reader. */
-    private suspend fun markdownThumbnail(uri: String, whole: Boolean): ImageBitmap? {
-        val generation = thumbnailGeneration
-        val style = preferences.markdownStyle
-        val renderedPalette = palette
-        val renderer = markdownRenderer(style, renderedPalette)
-        return withContext(thumbDispatcher) {
-            delay(150)
-            if (!isActive || !isCurrentThumbnail(generation)) return@withContext null
-            val bytes = runCatching { markdownStore.read(uri) }.getOrNull() ?: return@withContext null
-            val source = runCatching { com.xnotes.core.text.MarkdownSource.decode(bytes).text }.getOrNull() ?: return@withContext null
-            val parent = markdown?.takeIf { it.uri == uri }?.resourceParent ?: markdownStore.parent(uri, browseRoot)
-                ?: markdownStore.parent(uri, com.xnotes.platform.AppStorageDocumentsProvider.treeUri(appContext).toString())
-            val key = "$uri#markdown:science-1:${com.xnotes.core.text.MarkdownSource.digest(bytes)}:$parent"
-            val bitmap = thumbCache.load(key, generation) ?: run {
-                // The first viewport never needs the rest of a long document's AST or code spans.
-                val body = renderer.render(source.take(16 * 1024)).html
-                val html = com.xnotes.platform.MarkdownPage.html(body, style, renderedPalette)
-                com.xnotes.platform.MarkdownWeb.thumbnail(viewContext, markdownStore, parent, html, tilePx, (tilePx * 1.414).roundToInt())
-                    ?.also { thumbCache.store(key, it, generation) }
-            } ?: return@withContext null
-            if (!isActive || !isCurrentThumbnail(generation)) { bitmap.recycle(); return@withContext null }
-            val result = if (whole) bitmap else android.graphics.Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, minOf(bitmap.width, bitmap.height))
-            if (result !== bitmap) bitmap.recycle()
-            publishThumbnail(if (whole) pageThumbKey(uri) else uri, result, generation)
-        }
-    }
-
-    /** An already-rendered whole-page thumbnail for [uri], to seed a tile instantly. */
-    fun cachedPageThumb(uri: String): ImageBitmap? = synchronized(noteThumbs) { noteThumbs.get(pageThumbKey(uri)) }
-
-    /**
-     * The first page whole, for Gallery and the "Whole page" tiles: [pageThumbPx] tall at the page's own shape,
-     * or for a canvas its content in a landscape frame of the same size. Cached like the square tiles, and dropped
-     * with them when the document changes.
-     */
-    suspend fun pageThumbnail(uri: String, name: String): ImageBitmap? {
-        if (DocumentKind.ofName(name) == DocumentKind.MARKDOWN) return markdownThumbnail(uri, whole = true)
-        val generation = thumbnailGeneration
-        val key = pageThumbKey(uri)
-        synchronized(noteThumbs) { noteThumbs.get(key)?.let { return it } }
-        return withContext(thumbDispatcher) {
-            delay(150)
-            if (!isActive || !isCurrentThumbnail(generation)) return@withContext null
-            synchronized(noteThumbs) { noteThumbs.get(key)?.let { return@withContext it } }
-            val bmp = thumbCache.load(key, generation) ?: run {
-                val u = android.net.Uri.parse(uri)
-                val rendered = if (DocumentKind.ofName(name) == DocumentKind.CANVAS) {
-                    val doc = runCatching { appContext.contentResolver.openInputStream(u)?.use { canvasCodec.read(it, imageDir) } }.getOrNull()
-                        ?: return@withContext null
-                    try {
-                        renderCanvasThumbnail(doc, (pageThumbPx * 1.414).roundToInt(), pageThumbPx)
-                    } finally {
-                        deleteCanvasImageTemps(doc)
-                    }
-                } else {
-                    val doc = runCatching { appContext.contentResolver.openInputStream(u)?.use { codec.read(it, pdfDir, imageDir) } }.getOrNull()
-                        ?: return@withContext null
-                    try {
-                        val vs = viewSettingsFor(uri)
-                        renderDocPage(doc, 0, pageThumbPx, pdfPageFilterFor(vs), vs.rotation)
-                    } finally {
-                        doc.pdfFile?.delete()
-                        deleteImageTemps(doc)
-                    }
-                } ?: return@withContext null
-                rendered.also { thumbCache.store(key, it, generation) }
-            }
-            publishThumbnail(key, bmp, generation)
-        }
-    }
-
-    /** The first [max] pages of the note at [uri], each [heightPx] tall, for a preview's page strip; empty for a canvas. */
-    suspend fun pageStrip(uri: String, name: String, max: Int, heightPx: Int): List<ImageBitmap> {
-        val generation = thumbnailGeneration
-        if (DocumentKind.ofName(name) != DocumentKind.NOTE) return emptyList()
-        return withContext(thumbDispatcher) {
-            val doc = runCatching {
-                appContext.contentResolver.openInputStream(android.net.Uri.parse(uri))?.use { codec.read(it, pdfDir, imageDir) }
-            }.getOrNull() ?: return@withContext emptyList()
-            try {
-                val vs = viewSettingsFor(uri)
-                val filter = pdfPageFilterFor(vs)
-                (0 until minOf(max, doc.pages.size)).mapNotNull { i ->
-                    if (!isActive || !isCurrentThumbnail(generation)) return@withContext emptyList()
-                    runCatching { renderDocPage(doc, i, heightPx, filter, vs.rotation) }.getOrNull()?.asImageBitmap()
-                }.takeIf { isActive && isCurrentThumbnail(generation) } ?: emptyList()
-            } finally {
-                doc.pdfFile?.delete()
-                deleteImageTemps(doc)
-            }
-        }
-    }
-
-    /** Delete the temp image files backing a transient document (thumbnail/export/cancelled open), so
-     *  they don't pile up in [imageDir] until the next launch purge. Never called on the open note. */
-    private fun deleteImageTemps(doc: Document) {
-        for (page in doc.pages) for (item in page.items) {
-            if (item is ImageItem) runCatching { item.image.file.delete() }
-            if (item is com.xnotes.core.model.AudioItem) runCatching { item.audio.file.delete() }
-        }
-        for (file in doc.templatePackages.values) runCatching { file.delete() }
-    }
-
-    /** [deleteImageTemps] for a canvas, whose items are one flat list rather than per page. */
-    private fun deleteCanvasImageTemps(doc: com.xnotes.core.infinite.InfiniteDocument) {
-        for (item in doc.items) {
-            if (item is ImageItem) runCatching { item.image.file.delete() }
-            if (item is com.xnotes.core.model.AudioItem) runCatching { item.audio.file.delete() }
-        }
-    }
-
-    /** Drop a note's cached tile (memory + disk) so it re-renders with fresh content next time it's shown. */
-    private fun invalidateThumb(uri: String) {
-        synchronized(noteThumbs) { noteThumbs.remove(uri); noteThumbs.remove(pageThumbKey(uri)) }
-        thumbCache.remove(uri)
-        thumbCache.remove(pageThumbKey(uri))
-    }
-
-    /**
-     * Render the just-closed note's tile from the in-memory document and cache it (memory + disk), so
-     * the grid shows it instantly and current. Runs on the low-priority [thumbDispatcher]; identity-
-     * guarded so that if the user has already opened another note (state.document changed) it bails
-     * rather than caching the wrong pixels. Called from [goHome] — never during editing.
-     */
-    private suspend fun regenerateClosedNoteThumb(uri: String) {
-        val generation = thumbnailGeneration
+    private fun queueClosedNoteThumbnail(uri: String) {
         val doc = state.document
-        // The closing note's own filter + rotation, captured before any swap.
-        val filter = pdfPageFilter()
-        val rotation = viewSettings.rotation
-        withContext(thumbDispatcher) {
-            if (state.document !== doc) return@withContext // a new note was opened; don't cache stale pixels
-            val bmp = runCatching { renderDocThumbnailSquare(doc, tilePx, filter, rotation) }.getOrNull() ?: return@withContext
-            thumbCache.store(uri, bmp, generation)
-            // The whole-page tile is drawn again the next time it's shown.
-            synchronized(noteThumbs) { noteThumbs.remove(pageThumbKey(uri)) }
-            thumbCache.remove(pageThumbKey(uri))
-            publishThumbnail(uri, bmp, generation)
+        val style = thumbnailStyle(uri)
+        autosaveScope.launch {
+            thumbnails.regenerate(uri, doc, style) { state.document === doc }
         }
     }
 
@@ -4307,8 +3904,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         viewStates.clear() // forget every remembered per-note view for the released folder
         createdStore.clear() // and every tracked creation time — the keys only meant anything for that folder
         docMeta.clear()
-        synchronized(noteThumbs) { noteThumbs.evictAll() }
-        thumbCache.prune(emptySet()) // every cached tile belonged to the released folder
+        thumbnails.clearFolder()
     }
 
     /** The granted root folder's display name (e.g. "Documents"), or null. */
@@ -5213,16 +4809,20 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     }.getOrDefault(-1L)
 
     private fun scheduleAutosave() {
-        val uri = autosaveUri ?: return
+        if (autosaveUri == null) return
+        val doc = state.document
         noteDebounceJob?.cancel()
         state.autosaveStatus = "pending" // debounce running; drives the debug overlay
         noteDebounceJob = autosaveScope.launch {
             kotlinx.coroutines.delay(1200L) // debounce: write after a short idle
             noteWriteJob?.join() // wait out a write already going out rather than racing it
+            // An explicit Save-As may have rebound this document while the debounce waited.
+            if (state.document !== doc || !doc.dirty) return@launch
+            val uri = autosaveUri ?: return@launch
             val startNs = System.nanoTime() // the debug overlay's save timings start once the debounce fires
             // Pointers, on the main thread: the writer gets its own page lists over the live items
             // (see [snapshot]), so it never iterates a list the pen is adding to.
-            val snapshot = state.document.snapshot()
+            val snapshot = doc.snapshot()
             state.lastSaveSnapshotMs = msSince(startNs)
             startNoteWrite(uri, snapshot, state.document.displayName ?: state.document.title, startNs)
         }
@@ -5410,7 +5010,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         }
         if (prev.rotation != new.rotation) {
             // Every thumbnail mirrors the canvas orientation: drop them all to re-render.
-            synchronized(pageThumbs) { pageThumbs.evictAll() }
+            pageThumbs.clear()
             pdfThumbTick++
             currentUri?.let { invalidateThumb(it) }
         }
@@ -5443,11 +5043,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     }
 
     /** Drop every cached side-panel thumbnail backed by a PDF page (the filter changed). */
-    private fun evictPdfPageThumbnails(): Boolean = synchronized(pageThumbs) {
-        var evicted = false
-        state.document.pages.forEach { if (it.pdfPage != null && pageThumbs.remove(it) != null) evicted = true }
-        evicted
-    }
+    private fun evictPdfPageThumbnails(): Boolean = pageThumbs.removePdfPages(state.document.pages)
 
     /**
      * Choose a just-installed document's initial view — its remembered view for a folder note,
@@ -6077,7 +5673,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         } finally {
             src?.close()
             doc.pdfFile?.delete() // transient doc loaded just for export; drop its extracts
-            deleteImageTemps(doc)
+            com.xnotes.platform.deleteTransientResources(doc)
         }
     }
 
@@ -6103,7 +5699,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 title = title.ifEmpty { doc.title },
             )
         } finally {
-            deleteCanvasImageTemps(doc) // transient doc loaded just for export; drop its extracts
+            com.xnotes.platform.deleteTransientResources(doc) // transient doc loaded just for export; drop its extracts
         }
     }
 
@@ -8516,7 +8112,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         pdfSource?.close()
         pdfSource = null
         colorDropper.release()
-        thumbDispatcher.close()
+        thumbnails.close()
+        pageThumbs.clear()
         infiniteOrNull?.release()
         secondary?.releaseUiResources()
     }
@@ -8559,7 +8156,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         flushThen(showOverlay = true) {
             // Regenerate this folder note's grid tile now that editing is done (off-thread, low priority);
             // a non-folder note (no autosave binding) isn't in the explorer, so there's nothing to do.
-            autosaveUri?.let { uri -> autosaveScope.launch { regenerateClosedNoteThumb(uri) } }
+            autosaveUri?.let(::queueClosedNoteThumbnail)
             autosaveUri = null
             noteOpen = false
         }

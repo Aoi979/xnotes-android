@@ -38,6 +38,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -45,6 +46,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -70,6 +72,7 @@ import java.time.ZoneId
 internal fun TrashPane(editor: Editor, sidebarOpen: Boolean, onShowSidebar: () -> Unit, onOpenPreferences: () -> Unit) {
     val palette = LocalPalette.current
     val context = LocalContext.current
+    val resources by rememberUpdatedState(LocalResources.current)
     val root = editor.browseRoot
     val prefs = remember(editor.prefsVersion) { editor.preferences }
     val scope = rememberCoroutineScope()
@@ -185,7 +188,7 @@ internal fun TrashPane(editor: Editor, sidebarOpen: Boolean, onShowSidebar: () -
                                         val ok = withContext(Dispatchers.IO) { editor.restoreTrash(root, item) }
                                         busy = false
                                         refresh++
-                                        editor.say(if (ok) context.getString(R.string.restored_item, label(item)) else context.getString(R.string.err_restore_item, label(item)))
+                                        editor.say(if (ok) resources.getString(R.string.restored_item, label(item)) else resources.getString(R.string.err_restore_item, label(item)))
                                     }
                                 },
                                 onDelete = { confirmDelete = item },
