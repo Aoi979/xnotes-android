@@ -12,6 +12,8 @@ import org.json.JSONObject
  * field falls back to its default if missing or malformed.
  */
 data class Preferences(
+    val markdownStyle: MarkdownStyle = MarkdownStyle.DEFAULT,
+    val markdownPdfStyle: MarkdownPdfStyle = MarkdownPdfStyle.DEFAULT,
     val uiAppearance: String = "system", // "system" (follows OS dark/light) | "dark" | "light" | "oled"
     val materialMode: MaterialColourMode = MaterialColourMode.DUAL,
     val materialSingleSeed: Rgba = DEFAULT_MATERIAL_SINGLE,
@@ -126,6 +128,8 @@ data class Preferences(
         get() = PageSizeChoice(defaultPageSize, defaultPageOrientation, customPageWidthMm, customPageHeightMm)
 
     fun toJson(): JSONObject = JSONObject()
+        .put("markdown_style", markdownStyle.toJson())
+        .put("markdown_pdf", markdownPdfStyle.toJson())
         .put("ui_appearance", uiAppearance)
         .put("hide_window_decoration", hideWindowDecoration)
         .put("page_color", pageColor?.let { Rgba.toHex(it) } ?: JSONObject.NULL)
@@ -231,6 +235,8 @@ data class Preferences(
             }
             val legacyDualAccent = legacySeed ?: Rgba.fromHex(o.optString("accent_color")) ?: DEFAULT_ACCENT
             return Preferences(
+                markdownStyle = MarkdownStyle.fromJson(o.optJSONObject("markdown_style")),
+                markdownPdfStyle = MarkdownPdfStyle.fromJson(o.optJSONObject("markdown_pdf"), o.optJSONObject("markdown_style")),
                 uiAppearance = appearance,
                 materialMode = materialMode,
                 materialSingleSeed = Rgba.fromHex(o.optString("material_single_seed"))

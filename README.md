@@ -70,10 +70,48 @@ GitHub and F-Droid ship the same signed APK, so you can switch between them with
 
 ## Build from source
 
-Needs JDK 17, NDK 27.0.12077973 and CMake 3.22.1.
+Use JDK 21 to run the pinned Gradle 9.3.1 / Android Gradle Plugin 9.1.1 build.
+The app's Java and Kotlin bytecode target remains Java 17. Install Android SDK
+Platform 37 (`platforms;android-37.0`), NDK 27.0.12077973 and CMake 3.22.1.
 
 ```bash
-git clone https://github.com/shardulvs/xnotes-android.git
+git clone https://github.com/Aoi979/xnotes-android.git
 cd xnotes-android
-JAVA_HOME=/path/to/jdk-17 ./gradlew assembleDebug
+./scripts/build-android.sh
 ```
+
+The script uses `$HOME/Android/Sdk` and `/opt/android-studio/jbr` by default,
+and respects `JAVA_HOME`, `ANDROID_HOME` and `ANDROID_SDK_ROOT`. Override this
+machine's paths in the gitignored `.android-build.env` file if needed:
+
+```bash
+XNOTES_ANDROID_SDK_ROOT=/path/to/Android/Sdk
+XNOTES_JAVA_HOME=/path/to/jdk-21
+```
+
+If Android Studio bundles a newer JBR (for example, JBR 25), keep a separate
+JDK 21 for this build and point `XNOTES_JAVA_HOME` at it. The IDE can continue
+to use its own bundled runtime.
+
+For Android Studio, set the Gradle JDK to `GRADLE_LOCAL_JAVA_HOME` and put
+`java.home=/path/to/jdk-21` in the gitignored `.gradle/config.properties` file
+([JDK configuration](https://developer.android.com/build/jdks)). The Android SDK
+path goes in the gitignored `local.properties` file as `sdk.dir=/path/to/Android/Sdk`.
+
+Builds default to one Gradle worker, a 1536 MiB JVM heap, a 512 MiB metaspace
+limit, and Kotlin compilation in the Gradle process. A shared Ninja job pool
+also serializes native compilation and linking, including Android Studio builds
+([CMake job pools](https://cmake.org/cmake/help/v3.22/prop_gbl/JOB_POOLS.html)).
+These settings bound compiler concurrency; other running applications still
+contribute to total memory usage.
+
+To build only for an ARM64 device or an x86_64 emulator:
+
+```bash
+./scripts/build-android.sh :app:assembleDebug -Pandroid.injected.build.abi=arm64-v8a
+./scripts/build-android.sh :app:assembleDebug -Pandroid.injected.build.abi=x86_64
+```
+
+The unrestricted debug build includes ARM64, ARMv7 and x86_64; release builds
+target ARM64. Release signing uses a separate gitignored `keystore.properties`
+and keystore. Debug builds use the normal local Android debug key.

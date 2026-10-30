@@ -1,0 +1,29 @@
+{
+  "version": "11.17.2",
+  "dist": {
+    "shasum": "e3caf3717582c0e44e5d04cff043e025caec7cba",
+    "tarball": "https://registry.npmjs.org/mermaid/-/mermaid-11.17.2.tgz",
+    "fileCount": 1183,
+    "integrity": "sha512-V6K3C8EBdEsPFZXSKMJe6ppQOENxuHARr9GvHX4hh47lAbhMRD9qf4oEK7LoaRQxULMa80/qt5gHO73aCleBBg==",
+    "signatures": [
+      {
+        "sig": "MEQCIBLYqXbd61cRefpjgh9JOs3HhQ+iY+1i7oSaUa4MX9ZdAiA58dsYJptKzDV1o6AcdTf/4oGMFIcOX+sQoNNa4v6pGg==",
+        "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U"
+      },
+      {
+        "sig": "MEUCIBsUDz+Fwg4YbIDq5pCCIqssnpyhBzY7WE2MC6ISPIDgAiEAw9AHRXeHgohGfZ2jUdvbWBPBo9Y85Pm5fjQpDRARrRc=",
+        "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U"
+      }
+    ],
+    "attestations": {
+      "url": "https://registry.npmjs.org/-/npm/v1/attestations/mermaid@11.17.2",
+      "provenance": {
+        "predicateType": "https://slsa.dev/provenance/v1"
+      }
+    },
+    "unpackedSize": 83995446
+  },
+  "license": "MIT",
+  "bundleSha256": "581ed7d74bd9048d0e3a91363927d72ef22942d7722546b27f7cc29e35390eb8",
+  "source": "https://github.com/mermaid-js/mermaid/releases/tag/mermaid@11.17.2"
+}

@@ -190,7 +190,7 @@ import kotlin.math.roundToInt
 enum class BackstageView { HOME, PREFERENCES, ABOUT, TRASH }
 
 /** Whether the Home explorer is awaiting a new file/folder name. */
-private enum class CreateMode { NONE, FILE, CANVAS, FOLDER }
+private enum class CreateMode { NONE, FILE, CANVAS, MARKDOWN, FOLDER }
 
 /** Entries copied or cut in the explorer; each remembers the folder it was listed in. */
 private data class ClipItem(val entries: List<BrowseEntry>, val isCut: Boolean)
@@ -877,12 +877,13 @@ private fun NewItemMenuItems(
         onClick = { onClose(); onPick() },
         modifier = row,
         contentPadding = pad,
-        shape = MenuDefaults.itemShape(index, 4).shape,
+        shape = MenuDefaults.itemShape(index, 5).shape,
     )
     item(0, XnotesIcons.edit, stringResource(R.string.new_note_menu)) { onCreateMode(CreateMode.FILE) }
     item(1, XnotesIcons.canvas, stringResource(R.string.new_canvas_menu)) { onCreateMode(CreateMode.CANVAS) }
-    item(2, XnotesIcons.importDoc, stringResource(R.string.import_pdf)) { onImportPdf() }
-    item(3, XnotesIcons.newFolder, stringResource(R.string.new_folder_menu)) { onCreateMode(CreateMode.FOLDER) }
+    item(2, XnotesIcons.markdown, stringResource(R.string.md_new)) { onCreateMode(CreateMode.MARKDOWN) }
+    item(3, XnotesIcons.importDoc, stringResource(R.string.import_pdf)) { onImportPdf() }
+    item(4, XnotesIcons.newFolder, stringResource(R.string.new_folder_menu)) { onCreateMode(CreateMode.FOLDER) }
 }
 
 /** What the explorer hands back to the activity: opening, sharing and exporting files it can't do itself. */
@@ -1007,6 +1008,11 @@ private fun CreateButton(
                         onClick = { menuOpen = false; onCreateMode(CreateMode.CANVAS) },
                         icon = { Icon(XnotesIcons.canvas, contentDescription = null) },
                         text = { Text(stringResource(R.string.new_canvas_menu)) },
+                    )
+                    FloatingActionButtonMenuItem(
+                        onClick = { menuOpen = false; onCreateMode(CreateMode.MARKDOWN) },
+                        icon = { Icon(XnotesIcons.markdown, null) },
+                        text = { Text(stringResource(R.string.md_new)) },
                     )
                     FloatingActionButtonMenuItem(
                         onClick = { menuOpen = false; onCreateMode(CreateMode.FILE) },
@@ -1479,6 +1485,7 @@ private fun ExplorerSection(
                 EntryKind.FOLDER -> stringResource(R.string.kind_no_folders)
                 EntryKind.NOTE -> stringResource(R.string.kind_no_notes)
                 EntryKind.CANVAS -> stringResource(R.string.kind_no_canvases)
+                EntryKind.MARKDOWN -> stringResource(R.string.md_none)
             },
             EmptyArt.SEARCH,
         )
@@ -1556,7 +1563,7 @@ private fun ExplorerSection(
                             val k = kindFilter
                             ExplorerChip(k?.let { words.kinds(it) } ?: stringResource(R.string.all_kinds), k != null, icon = XnotesIcons.filter, trailing = XnotesIcons.chevronDown, labelled = labelled) { kindOpen = true }
                             DropdownMenu(expanded = kindOpen, onDismissRequest = { kindOpen = false }) {
-                                val options = listOf<EntryKind?>(null) + listOf(EntryKind.NOTE, EntryKind.PDF, EntryKind.CANVAS)
+                                val options = listOf<EntryKind?>(null) + listOf(EntryKind.NOTE, EntryKind.PDF, EntryKind.CANVAS, EntryKind.MARKDOWN)
                                 options.forEachIndexed { index, option ->
                                     ExpressiveChoiceMenuItem(
                                         selected = option == kindFilter,
@@ -1952,15 +1959,21 @@ private fun ExplorerSection(
                 }
             }
         }
-        CreateButton(
+        val singleMarkdown = selection.singleOrNull()?.takeIf { !it.isDir && DocumentKind.ofName(it.name) == DocumentKind.MARKDOWN }
+        if (selection.isEmpty() || singleMarkdown != null || selection.any { it.isDir || DocumentKind.ofName(it.name)?.canExportPdf != false }) CreateButton(
             exporting = selection.isNotEmpty(),
             onCreateMode = onCreateMode,
             onImportPdf = calls.importPdf,
             onExport = {
-                val picked = selection.toList()
-                // A lone folder zips under its own name, anything else under the folder it was picked in.
-                val name = picked.singleOrNull()?.takeIf { it.isDir }?.name ?: stack.lastOrNull()?.second ?: rootName ?: context.getString(R.string.folder)
-                calls.exportPdfs(picked, name) { selection.clear() }
+                if (singleMarkdown != null) {
+                    selection.clear()
+                    calls.exportFilePdf(singleMarkdown.documentUri)
+                } else {
+                    val picked = selection.toList()
+                    // A lone folder zips under its own name, anything else under the folder it was picked in.
+                    val name = picked.singleOrNull()?.takeIf { it.isDir }?.name ?: stack.lastOrNull()?.second ?: rootName ?: context.getString(R.string.folder)
+                    calls.exportPdfs(picked, name) { selection.clear() }
+                }
             },
             modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp),
         )
@@ -2012,11 +2025,11 @@ private fun ExplorerSection(
     }
     // Name entry for a new canvas, new folder, or a pending PDF import. Hidden while an import is
     // actually being written, so only the "Importing…" dialog shows.
-    if ((createMode == CreateMode.CANVAS || createMode == CreateMode.FOLDER || pendingImport != null) && !editor.importing) {
+    if ((createMode == CreateMode.CANVAS || createMode == CreateMode.MARKDOWN || createMode == CreateMode.FOLDER || pendingImport != null) && !editor.importing) {
         val isFolder = pendingImport == null && createMode == CreateMode.FOLDER
         val default = when {
             pendingImport != null -> pendingImport.defaultName // import names default to the source file
-            createMode == CreateMode.FILE || createMode == CreateMode.CANVAS ->
+            createMode == CreateMode.FILE || createMode == CreateMode.CANVAS || createMode == CreateMode.MARKDOWN ->
                 nextUntitled(editor, editor.cachedChildren(root, currentDocId))
             else -> "" // new folder
         }
@@ -2025,6 +2038,7 @@ private fun ExplorerSection(
                 pendingImport != null -> stringResource(R.string.import_title)
                 isFolder -> stringResource(R.string.new_folder)
                 createMode == CreateMode.CANVAS -> stringResource(R.string.new_canvas)
+                createMode == CreateMode.MARKDOWN -> stringResource(R.string.md_new)
                 else -> stringResource(R.string.new_note)
             },
             initial = default,
@@ -2049,6 +2063,11 @@ private fun ExplorerSection(
                     isFolder -> scope.launch {
                         val ok = withContext(Dispatchers.IO) { editor.createFolder(root, currentDocId, n) }
                         if (ok) { onCreateMode(CreateMode.NONE); refreshKey++ } else fieldError = context.getString(R.string.err_create_folder)
+                    }
+                    createMode == CreateMode.MARKDOWN -> scope.launch {
+                        val uri = withContext(Dispatchers.IO) { editor.createMarkdownFile(root, currentDocId, n) }
+                        if (uri != null) { onCreateMode(CreateMode.NONE); refreshKey++; calls.openFile(uri) }
+                        else fieldError = context.getString(R.string.err_create_note)
                     }
                     createMode == CreateMode.CANVAS -> scope.launch {
                         val uri = withContext(Dispatchers.IO) { editor.createBlankCanvasFile(root, currentDocId, n) }
@@ -2075,7 +2094,10 @@ private fun ExplorerSection(
             allowEmpty = false,
             onConfirm = { raw ->
                 val kind = DocumentKind.ofName(entry.name)
-                val newName = if (entry.isDir || kind == null) raw else DocumentKind.withSuffix(DocumentKind.stripSuffix(raw), kind)
+                val newName = if (entry.isDir || kind == null) raw else {
+                    val suffix = kind.suffixOf(raw) ?: kind.suffixOf(entry.name) ?: kind.suffix
+                    DocumentKind.stripSuffix(raw) + suffix
+                }
                 // Renames touch the open-note binding (Compose state) so run on the main thread.
                 val ok = editor.renameDocument(entry.documentUri, newName)
                 renaming = null
@@ -2366,13 +2388,14 @@ internal fun EntryMenu(
             if (onShare != null) {
                 Spacer(Modifier.height(MenuDefaults.GroupSpacing))
                 DropdownMenuGroup(shapes = MenuDefaults.groupShape(1, groupCount)) {
-                    EntryMenuAction(0, 3, { Text(stringResource(R.string.share)) }) {
+                    val count = if (onExportPdf == null) 2 else 3
+                    EntryMenuAction(0, count, { Text(stringResource(R.string.share)) }) {
                         onDismiss(); onShare()
                     }
-                    EntryMenuAction(1, 3, { Text(stringResource(R.string.save_copy_ellipsis)) }) {
+                    EntryMenuAction(1, count, { Text(stringResource(R.string.save_copy_ellipsis)) }) {
                         onDismiss(); onSaveCopy?.invoke()
                     }
-                    EntryMenuAction(2, 3, { Text(stringResource(R.string.export_pdf)) }) {
+                    if (onExportPdf != null) EntryMenuAction(2, count, { Text(stringResource(R.string.export_pdf)) }) {
                         onDismiss(); onExportPdf?.invoke()
                     }
                 }

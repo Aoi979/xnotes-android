@@ -13,7 +13,7 @@ if [[ -f "$LOCAL_ENV" ]]; then
 fi
 
 SDK_ROOT="${XNOTES_ANDROID_SDK_ROOT:-${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/Android/Sdk}}}"
-JDK_HOME="${XNOTES_JAVA_HOME:-/opt/android-studio/jbr}"
+JDK_HOME="${XNOTES_JAVA_HOME:-${JAVA_HOME:-/opt/android-studio/jbr}}"
 
 if [[ ! -x "$JDK_HOME/bin/java" || ! -x "$JDK_HOME/bin/javac" ]]; then
     printf 'A full JDK was not found at %s. Set XNOTES_JAVA_HOME in %s.\n' "$JDK_HOME" "$LOCAL_ENV" >&2
@@ -54,10 +54,6 @@ if (($# == 0)); then
 fi
 
 printf 'Building with JDK %s (%s) and Android SDK %s\n' "$JAVA_VERSION" "$JAVA_HOME" "$ANDROID_SDK_ROOT"
-exec "$ROOT_DIR/gradlew" \
-    --no-daemon \
-    --max-workers=1 \
-    -Dorg.gradle.parallel=false \
-    '-Dorg.gradle.jvmargs=-Xmx1536m -Dfile.encoding=UTF-8' \
-    -Pkotlin.compiler.execution.strategy=in-process \
-    "$@"
+# Shared memory and worker limits live in gradle.properties so IDE builds use
+# the same defaults. Stop the command-line build VM when the build completes.
+exec "$ROOT_DIR/gradlew" --no-daemon "$@"

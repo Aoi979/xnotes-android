@@ -342,19 +342,9 @@ fun StylesPopup(editor: Editor, onImportTemplate: () -> Unit = {}, onDismiss: ()
             if (tab == 0) {
                 Spacer(Modifier.size(8.dp))
                 if (showNewNoteRow && !docStyle.isEmpty) {
-                    // The checkbox's 48dp touch frame insets the drawn box; pull the row back to align it.
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().offset(x = (-14).dp)) {
-                        Checkbox(
-                            checked = !editor.newNoteStyle.isEmpty && docStyle == editor.newNoteStyle,
-                            onCheckedChange = { on ->
-                                editor.saveNewNoteStyle(if (on) docStyle else PageStyle())
-                            },
-                        )
-                        Text(
-                            stringResource(R.string.default_for_new_notes),
-                            color = LocalPalette.current.text.toComposeColor(),
-                            fontSize = 12.sp,
-                        )
+                    SettingsCheckRow(stringResource(R.string.default_for_new_notes),
+                        !editor.newNoteStyle.isEmpty && docStyle == editor.newNoteStyle) { on ->
+                        editor.saveNewNoteStyle(if (on) docStyle else PageStyle())
                     }
                     Spacer(Modifier.size(4.dp))
                 }
@@ -730,6 +720,7 @@ fun ViewMenuPopup(editor: Editor, onDismiss: () -> Unit) {
     DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
         Column(Modifier.width(300.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
             PopupTitle(stringResource(R.string.title_view))
+            PdfReadingHint(stringResource(R.string.pref_current_document_scope))
             StyleCaption(stringResource(R.string.caption_viewing_mode))
             ExpressiveChoiceGroup(
                 options = listOf(
@@ -831,19 +822,8 @@ fun ViewMenuPopup(editor: Editor, onDismiss: () -> Unit) {
 
             Spacer(Modifier.size(8.dp))
             PdfControlsVisibility(showDefaultRow && overrides != ViewOverrides()) {
-                // The checkbox's 48dp touch frame insets the drawn box; pull the row back to align it.
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().offset(x = (-14).dp)) {
-                    Checkbox(
-                        checked = vs == defaults,
-                        onCheckedChange = { on ->
-                            editor.updateViewDefaults(if (on) vs else openedDefaults.takeIf { it != vs } ?: ViewSettings())
-                        },
-                    )
-                    Text(
-                        stringResource(R.string.default_for_all_notes),
-                        color = LocalPalette.current.text.toComposeColor(),
-                        fontSize = 12.sp,
-                    )
+                SettingsCheckRow(stringResource(R.string.default_for_all_notes), vs == defaults) { on ->
+                    editor.updateViewDefaults(if (on) vs else openedDefaults.takeIf { it != vs } ?: ViewSettings())
                 }
                 Spacer(Modifier.size(4.dp))
             }
@@ -1060,10 +1040,7 @@ fun ZoomMenuPopup(editor: Editor, onDismiss: () -> Unit) {
 private fun ZoomLimitRow(label: String, enabled: Boolean, value: Int, onToggle: (Boolean) -> Unit, onValue: (Int) -> Unit) {
     val palette = LocalPalette.current
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(label, color = palette.text.toComposeColor(), style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-            Switch(checked = enabled, onCheckedChange = onToggle)
-        }
+        SettingsSwitchRow(label, enabled, onChange = onToggle)
         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
             ZoomStepButton(
                 icon = XnotesIcons.minus,
@@ -1240,12 +1217,8 @@ internal fun PopupTitle(text: String) {
 }
 
 @Composable
-internal fun ToggleRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.width(220.dp)) {
-        Text(label, color = LocalPalette.current.text.toComposeColor(), fontSize = 12.sp)
-        Switch(checked = checked, onCheckedChange = onChange)
-    }
-}
+internal fun ToggleRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) =
+    SettingsSwitchRow(label, checked, onChange = onChange)
 
 @Composable
 internal fun SliderRow(

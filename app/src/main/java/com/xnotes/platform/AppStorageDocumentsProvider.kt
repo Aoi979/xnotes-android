@@ -125,7 +125,10 @@ class AppStorageDocumentsProvider : DocumentsProvider() {
     }
 
     private fun mimeOf(file: File): String =
-        if (file.isDirectory) Document.MIME_TYPE_DIR else "application/octet-stream"
+        if (file.isDirectory) Document.MIME_TYPE_DIR
+        else if (com.xnotes.core.util.DocumentKind.ofName(file.name) == com.xnotes.core.util.DocumentKind.MARKDOWN) "text/markdown"
+        else android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(file.extension.lowercase())
+            ?.takeIf { it.startsWith("image/") } ?: "application/octet-stream"
 
     // A free name in [parent]: the given one, else "<stem> (N)<.ext>" (SAF's de-dupe convention).
     private fun freeChild(parent: File, name: String): File {

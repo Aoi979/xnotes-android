@@ -114,17 +114,8 @@ fun CanvasStylesPopup(editor: InfiniteEditor, onDismiss: () -> Unit) {
 
             Spacer(Modifier.size(8.dp))
             if (showNewCanvasRow && background != CanvasBackground()) {
-                // The checkbox's 48dp touch frame insets the drawn box; pull the row back to align it.
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().offset(x = (-14).dp)) {
-                    Checkbox(
-                        checked = background == editor.newCanvasBackground,
-                        onCheckedChange = { on -> editor.saveNewCanvasBackground(if (on) background else null) },
-                    )
-                    Text(
-                        stringResource(R.string.default_for_new_canvases),
-                        color = LocalPalette.current.text.toComposeColor(),
-                        fontSize = 12.sp,
-                    )
+                SettingsCheckRow(stringResource(R.string.default_for_new_canvases), background == editor.newCanvasBackground) { on ->
+                    editor.saveNewCanvasBackground(if (on) background else null)
                 }
                 Spacer(Modifier.size(4.dp))
             }

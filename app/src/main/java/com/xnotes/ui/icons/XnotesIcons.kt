@@ -216,6 +216,7 @@ object XnotesIcons {
     // Backstage (File area) commands.
     val folder = icon("M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2Z")
     val save = icon("M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z", "M17 21v-8H7v8", "M7 3v5h8")
+    val markdown = icon("M3 5h18v14H3Z", "M6 15V9l3 3 3-3v6", "M17 9v6", "M15 13l2 2 2-2")
     val database = icon(ellipse(12.0, 5.0, 9.0, 3.0), "M3 5V19A9 3 0 0 0 21 19V5", "M3 12A9 3 0 0 0 21 12")
     val importDoc = icon("M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", "M7 10l5 5 5-5", "M12 15V3")
     val exportDoc = icon("M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", "M17 8l-5-5-5 5", "M12 3v12")

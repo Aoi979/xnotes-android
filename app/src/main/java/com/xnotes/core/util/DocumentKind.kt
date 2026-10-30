@@ -8,32 +8,42 @@ package com.xnotes.core.util
  * has to agree on which extensions are documents, and a place that forgets one silently hides the
  * user's files from the explorer.
  */
-enum class DocumentKind(val extension: String) {
+enum class DocumentKind(val extension: String, vararg aliases: String) {
     /** The paged notebook. */
     NOTE("xnote"),
 
     /** The infinite canvas. */
     CANVAS("xcanvas"),
+
+    /** A plain UTF-8 document; editing never converts it to a notebook bundle. */
+    MARKDOWN("md", "markdown"),
     ;
 
     /** The extension with its dot, as it appears at the end of a file name. */
     val suffix: String get() = ".$extension"
 
+    private val extensions = listOf(extension) + aliases
+
+    fun suffixOf(name: String): String? = extensions.firstOrNull { name.endsWith(".$it", ignoreCase = true) }
+        ?.let { name.takeLast(it.length + 1) }
+
+    val canExportPdf: Boolean get() = this != MARKDOWN
+
     companion object {
         /** The kind [name] denotes, or null when it is not a document at all. */
         fun ofName(name: String): DocumentKind? =
-            entries.firstOrNull { name.endsWith(it.suffix, ignoreCase = true) }
+            entries.firstOrNull { it.suffixOf(name) != null }
 
         fun isDocument(name: String): Boolean = ofName(name) != null
 
         /** [name] without its document extension, or unchanged when it has none. */
         fun stripSuffix(name: String): String {
             val kind = ofName(name) ?: return name
-            return name.dropLast(kind.suffix.length)
+            return name.dropLast(kind.suffixOf(name)!!.length)
         }
 
         /** [name] with [kind]'s extension, added only if it is not already the right one. */
         fun withSuffix(name: String, kind: DocumentKind): String =
-            if (name.endsWith(kind.suffix, ignoreCase = true)) name else "$name${kind.suffix}"
+            if (kind.suffixOf(name) != null) name else "$name${kind.suffix}"
     }
 }

@@ -39,7 +39,7 @@ object ExportZip {
                 val dir = "$prefix${unique(segment(n.name), "", taken)}/"
                 out.add(Entry(dir, null, n.name))
                 place(n.children, dir, out)
-            } else {
+            } else if (DocumentKind.ofName(n.name)?.canExportPdf != false) {
                 out.add(Entry(prefix + unique(segment(DocumentKind.stripSuffix(n.name)), ".pdf", taken), n.source, n.name))
             }
         }

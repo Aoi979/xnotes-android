@@ -154,6 +154,7 @@ class MainActivity : ComponentActivity() {
     private var editor: Editor? = null
     // A PDF or markdown file handed to us by another app ("Open with" / Share); consumed once the editor is ready.
     private var pendingImport by mutableStateOf<Uri?>(null)
+    private var pendingImportCopy by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -166,7 +167,10 @@ class MainActivity : ComponentActivity() {
         // The intent that started the task comes back whenever Android rebuilds it, from a saved state
         // or from Recents after the process died or the app was updated; it was handled the first time.
         val rebuilt = savedInstanceState != null || (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0
-        if (!rebuilt) pendingImport = importUri(intent)
+        if (!rebuilt) {
+            pendingImport = importUri(intent)
+            pendingImportCopy = intent.action == Intent.ACTION_SEND
+        }
         setContent {
             val context = LocalContext.current
             val ed = remember { Editor(context).also { editor = it } }
@@ -189,6 +193,7 @@ class MainActivity : ComponentActivity() {
                             fullscreen = ed.fullscreen,
                             onToggleFullscreen = ed::toggleFullscreen,
                             importUri = pendingImport,
+                            importAsCopy = pendingImportCopy,
                             onImportConsumed = { pendingImport = null },
                         )
                         androidx.compose.animation.AnimatedVisibility(
@@ -235,7 +240,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        importUri(intent)?.let { pendingImport = it }
+        importUri(intent)?.let { pendingImport = it; pendingImportCopy = intent.action == Intent.ACTION_SEND }
     }
 
     // The PDF or markdown uri carried by an inbound VIEW ("Open with") or SEND ("Share") intent, else null.
@@ -301,6 +306,7 @@ private fun EditorScreen(
     fullscreen: Boolean,
     onToggleFullscreen: () -> Unit,
     importUri: Uri? = null,
+    importAsCopy: Boolean = false,
     onImportConsumed: () -> Unit = {},
 ) {
     val context = LocalContext.current
@@ -335,6 +341,7 @@ private fun EditorScreen(
     var pendingSaveCopyUri by remember { mutableStateOf<String?>(null) }
     // A finished PDF render awaiting a SAF "Save as" destination (open-note / file / pages export).
     var pendingExportTemp by remember { mutableStateOf<java.io.File?>(null) }
+    var markdownPdfUri by remember { mutableStateOf<String?>(null) }
     // In-flight PDF render; drives the progress dialog, null hides it.
     var exportProgress by remember { mutableStateOf<ExportProgress?>(null) }
     // The running export's coroutine and its own cancel flag. Each export gets a fresh flag so a new
@@ -349,6 +356,20 @@ private fun EditorScreen(
 
     // Which pane a "Save as" writes: the focused one at the moment the picker opened.
     var savePane by remember { mutableStateOf(editor) }
+    var saveMarkdown by remember { mutableStateOf<com.xnotes.ui.MarkdownSession?>(null) }
+    val createMarkdownLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/markdown"),
+    ) { uri ->
+        val session = saveMarkdown
+        saveMarkdown = null
+        if (uri != null && session != null) {
+            runCatching { resolver.takePersistableUriPermission(uri, rwFlags) }
+            session.saveCopy(uri.toString(), displayNameOf(resolver, uri) ?: session.name) { ok ->
+                val after = pendingAfterSave; pendingAfterSave = null
+                if (ok) after?.invoke()
+            }
+        } else pendingAfterSave = null
+    }
     val createLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/octet-stream"),
     ) { uri ->
@@ -587,7 +608,11 @@ private fun EditorScreen(
     /** Open the "Save as" picker for [target], remembering which pane its result belongs to. */
     fun launchSaveAs(target: Editor) {
         savePane = target
-        createLauncher.launch("${target.title}.xnote")
+        if (target.markdown != null) {
+            saveMarkdown = target.markdown
+            createMarkdownLauncher.launch(target.markdown!!.name)
+        }
+        else createLauncher.launch("${target.title}.xnote")
     }
 
     fun saveOrPrompt() {
@@ -600,6 +625,7 @@ private fun EditorScreen(
 
     // The prompt is about one pane's note, so it asks about — and saves — the pane being acted on.
     fun guarded(target: Editor = editor.active, action: () -> Unit) {
+        target.markdown?.let { source -> source.requestSave { ok -> if (ok) action() }; return }
         when {
             // A canvas keeps its own autosave, and dirty/autosaveUri describe the paged buffer
             // underneath it, so asking about those here would prompt over a note nobody is looking at.
@@ -637,12 +663,16 @@ private fun EditorScreen(
      *  types share the explorer but not much else. Reads off-thread behind the "Opening note…"
      *  spinner so a big embedded PDF doesn't freeze the UI. */
     suspend fun openInto(target: Editor, uriStr: String): Boolean {
+        val already = editor.openPanes.firstOrNull { pane -> pane.currentUri?.let { pane.isSameDocument(it, uriStr) } == true }
+        if (already != null) { editor.focusPane(already.pane); return true }
         val name = displayNameOf(resolver, Uri.parse(uriStr))
-        if (com.xnotes.core.util.DocumentKind.ofName(name ?: "") == com.xnotes.core.util.DocumentKind.CANVAS) {
-            return target.openCanvasAsync(uriStr, name)
-        } else {
-            target.openAsync(uriStr, name)
-            return target.noteOpen && target.currentUri == uriStr
+        return when (com.xnotes.core.util.DocumentKind.ofName(name.orEmpty())) {
+            com.xnotes.core.util.DocumentKind.MARKDOWN -> target.openMarkdownAsync(uriStr, name)
+            com.xnotes.core.util.DocumentKind.CANVAS -> target.openCanvasAsync(uriStr, name)
+            else -> {
+                target.openAsync(uriStr, name)
+                target.noteOpen && target.currentUri == uriStr
+            }
         }
     }
 
@@ -654,6 +684,7 @@ private fun EditorScreen(
 
     /** Open two picked files together, one per pane, and start the split focused on the first. */
     fun openSplit(firstUri: String, secondUri: String) {
+        if (editor.isSameDocument(firstUri, secondUri)) return
         editor.splitRatio = 0.5f
         editor.focusPane(com.xnotes.ui.Pane.PRIMARY)
         val second = editor.secondaryPane()
@@ -752,7 +783,7 @@ private fun EditorScreen(
                 dir.listFiles()?.forEach { it.delete() } // keep only the file we're about to share
                 val file = java.io.File(dir, "$stem${kindOf(uriStr).suffix}")
                 java.io.FileOutputStream(file).use { o -> editor.copyFileTo(uriStr, o) }
-                launchShare(file, stem, "application/octet-stream")
+                launchShare(file, stem, if (kindOf(uriStr) == com.xnotes.core.util.DocumentKind.MARKDOWN) "text/markdown" else "application/octet-stream")
             }.onFailure { editor.message = context.getString(R.string.err_share_note) }
         }
     }
@@ -881,6 +912,17 @@ private fun EditorScreen(
         val markdown = runCatching { resolver.getType(src) }.getOrNull() in MARKDOWN_TYPES ||
             name?.substringAfterLast('.', "")?.lowercase() in MARKDOWN_EXTENSIONS
         val stem = com.xnotes.core.util.Paths.stem(name ?: "Document")
+        if (markdown) {
+            runCatching { resolver.takePersistableUriPermission(src, rwFlags) }
+            guardedAll {
+                scope.launch {
+                    val uri = if (importAsCopy) editor.copyMarkdownToLibrary(src.toString(), name) else src.toString()
+                    if (uri != null) editor.openMarkdownAsync(uri, if (importAsCopy) displayNameOf(resolver, Uri.parse(uri)) else name)
+                    else editor.say(context.getString(R.string.md_read_failed))
+                }
+            }
+            return@LaunchedEffect
+        }
         guardedAll {
             if (editor.browseRoot == null) editor.useInternalStorage()
             editor.requestImport(stem, src.toString(), markdown)
@@ -922,7 +964,8 @@ private fun EditorScreen(
                 onShareFile = { uri -> pendingShareUri = uri; showShareChooser = true },
                 onSaveCopyFile = { uri -> pendingSaveCopyUri = uri; saveCopyLauncher.launch("${stemOf(uri)}${kindOf(uri).suffix}") },
                 onExportFilePdf = { uri ->
-                    runPdfExport(stemOf(uri), shareDir = false, counting = countingOf(uri),
+                    if (kindOf(uri) == com.xnotes.core.util.DocumentKind.MARKDOWN) markdownPdfUri = uri
+                    else runPdfExport(stemOf(uri), shareDir = false, counting = countingOf(uri),
                         render = { o, prog, cancel -> editor.exportFileToPdf(uri, o, prog, cancel) },
                         onReady = { temp -> pendingExportTemp = temp; savePdfLauncher.launch("${stemOf(uri)}.pdf") })
                 },
@@ -1049,7 +1092,7 @@ private fun EditorScreen(
                     androidx.compose.material3.TextButton(onClick = { showShareChooser = false; pendingShareUri = null; shareUri?.let { shareFile(it, asPdf = false) } }) {
                         androidx.compose.material3.Text(stringResource(R.string.file_of_kind, shareSuffix))
                     }
-                    androidx.compose.material3.TextButton(onClick = { showShareChooser = false; pendingShareUri = null; shareUri?.let { shareFile(it, asPdf = true) } }) {
+                    if (shareUri?.let { kindOf(it).canExportPdf } != false) androidx.compose.material3.TextButton(onClick = { showShareChooser = false; pendingShareUri = null; shareUri?.let { shareFile(it, asPdf = true) } }) {
                         androidx.compose.material3.Text("PDF")
                     }
                 }
@@ -1092,6 +1135,13 @@ private fun EditorScreen(
                 }
             },
         )
+    }
+    markdownPdfUri?.let { uri ->
+        com.xnotes.ui.MarkdownPdfSheet(editor.preferences.markdownPdfStyle, editor.preferences.markdownStyle,
+            onDismiss = { markdownPdfUri = null }, onConfirm = { pdf, export ->
+                editor.setMarkdownPdfStyle(pdf)
+                if (export) scope.launch { editor.printMarkdownFile(uri, pdf) { ok -> if (!ok) editor.message = context.getString(R.string.err_export_pdf) } }
+            })
     }
     exportProgress?.let { p ->
         PdfExportDialog(done = p.done, total = p.total, counting = p.counting, onCancel = {
@@ -1414,7 +1464,11 @@ private fun EditorPane(
                         .background((if (focused) palette.accent else palette.border).toComposeColor()),
                 )
             }
-            if (canvasContent) {
+            if (editor.markdown != null) {
+                androidx.compose.runtime.key(editor.markdown) {
+                    com.xnotes.ui.MarkdownPane(editor, editor.markdown!!, actions.onOpenBackstage, onClose)
+                }
+            } else if (canvasContent) {
                 val canvas = editor.infinite
                 val bar: @Composable () -> Unit = {
                     com.xnotes.ui.InfiniteToolbar(

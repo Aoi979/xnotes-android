@@ -157,6 +157,7 @@ internal class ExplorerBody(
 internal fun entryKind(e: BrowseEntry, meta: DocMetaStore.Meta?): EntryKind = when {
     e.isDir -> EntryKind.FOLDER
     DocumentKind.ofName(e.name) == DocumentKind.CANVAS -> EntryKind.CANVAS
+    DocumentKind.ofName(e.name) == DocumentKind.MARKDOWN -> EntryKind.MARKDOWN
     meta?.pdf == true -> EntryKind.PDF
     else -> EntryKind.NOTE
 }
@@ -166,6 +167,7 @@ internal fun kindIcon(k: EntryKind): ImageVector = when (k) {
     EntryKind.NOTE -> XnotesIcons.file
     EntryKind.PDF -> XnotesIcons.pdf
     EntryKind.CANVAS -> XnotesIcons.canvas
+    EntryKind.MARKDOWN -> XnotesIcons.markdown
 }
 
 @Composable
@@ -174,6 +176,7 @@ internal fun kindLabel(k: EntryKind): String = when (k) {
     EntryKind.NOTE -> stringResource(R.string.kind_note)
     EntryKind.PDF -> stringResource(R.string.kind_pdf_note)
     EntryKind.CANVAS -> stringResource(R.string.kind_canvas)
+    EntryKind.MARKDOWN -> stringResource(R.string.md_document)
 }
 
 /** A document's first page: the top cropped to fill [shape]'s square, or the whole page fitted in. */
@@ -229,8 +232,8 @@ internal fun ThumbImage(img: ImageBitmap?, whole: Boolean, modifier: Modifier = 
 internal fun ThumbBadges(b: ExplorerBody, e: BrowseEntry, inset: Dp = 8.dp) {
     Box(Modifier.fillMaxSize().padding(inset)) {
         val kind = b.kind(e)
-        if (b.view.showKind && (kind == EntryKind.PDF || kind == EntryKind.CANVAS)) {
-            TileBadge(kindIcon(kind), if (kind == EntryKind.PDF) "PDF" else stringResource(R.string.kind_canvas), Modifier.align(Alignment.BottomStart))
+        if (b.view.showKind && kind != EntryKind.NOTE && kind != EntryKind.FOLDER) {
+            TileBadge(kindIcon(kind), kindLabel(kind), Modifier.align(Alignment.BottomStart))
         }
         val pages = b.pages(e)
         if (b.view.showPages && pages > 1) TileBadge(XnotesIcons.pages, "$pages", Modifier.align(Alignment.BottomEnd))
@@ -512,7 +515,7 @@ internal fun ListRow(b: ExplorerBody, e: BrowseEntry, wide: Boolean) {
                 Icon(kindIcon(kind), null, tint = dim, modifier = Modifier.size(16.dp))
                 Text(kindLabel(kind), color = dim, fontSize = 13.sp, maxLines = 1)
             }
-            Text(if (e.isDir || kind == EntryKind.CANVAS) "–" else b.pages(e).takeIf { it > 0 }?.toString() ?: "", color = fg, fontSize = 13.sp, textAlign = TextAlign.End, modifier = Modifier.width(LIST_PAGES_W))
+            Text(if (e.isDir || kind == EntryKind.CANVAS || kind == EntryKind.MARKDOWN) "–" else b.pages(e).takeIf { it > 0 }?.toString() ?: "", color = fg, fontSize = 13.sp, textAlign = TextAlign.End, modifier = Modifier.width(LIST_PAGES_W))
             Text(
                 if (e.isDir) b.counts[e.documentUri]?.let { itemsLabel(b.words, it) } ?: "" else formatSize(e.size),
                 color = if (e.isDir) dim else fg, fontSize = 13.sp, textAlign = TextAlign.End, maxLines = 1,
@@ -570,12 +573,13 @@ internal fun GalleryItem(b: ExplorerBody, e: BrowseEntry, shelf: Dp) {
         }
         Spacer(Modifier.height(3.dp))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.padding(horizontal = 4.dp)) {
-            if (b.view.showKind && (kind == EntryKind.PDF || kind == EntryKind.CANVAS)) {
+            if (b.view.showKind && (kind == EntryKind.PDF || kind == EntryKind.CANVAS || kind == EntryKind.MARKDOWN)) {
                 Icon(kindIcon(kind), null, tint = palette.textDim.toComposeColor(), modifier = Modifier.size(13.dp))
             }
             val count = when {
                 !b.view.showPages -> null
                 kind == EntryKind.CANVAS -> stringResource(R.string.kind_canvas)
+                kind == EntryKind.MARKDOWN -> stringResource(R.string.md_document)
                 pages > 0 -> pluralStringResource(R.plurals.pages_count, pages, pages)
                 else -> null
             }
@@ -605,8 +609,8 @@ internal fun TimelineCard(b: ExplorerBody, e: BrowseEntry, side: Dp) {
             if (selected) Box(Modifier.fillMaxSize().background(palette.selectionBackground.withAlpha(77).toComposeColor()))
             if (b.view.showKind) {
                 val kind = b.kind(e)
-                if (kind == EntryKind.PDF || kind == EntryKind.CANVAS) {
-                    TileBadge(kindIcon(kind), if (kind == EntryKind.PDF) "PDF" else stringResource(R.string.kind_canvas), Modifier.align(Alignment.BottomStart).padding(6.dp))
+                if (kind == EntryKind.PDF || kind == EntryKind.CANVAS || kind == EntryKind.MARKDOWN) {
+                    TileBadge(kindIcon(kind), kindLabel(kind), Modifier.align(Alignment.BottomStart).padding(6.dp))
                 }
             }
             if (selecting) CheckRing(selected, Modifier.align(Alignment.TopStart).padding(6.dp))

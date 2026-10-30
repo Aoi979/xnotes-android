@@ -32,7 +32,14 @@ android {
         }
         externalNativeBuild {
             cmake {
-                arguments += "-DANDROID_STL=c++_static"
+                // AGP invokes Ninja directly, so CMAKE_BUILD_PARALLEL_LEVEL alone
+                // does not bound the vendored PDFium/grammar compiler processes.
+                arguments += listOf(
+                    "-DANDROID_STL=c++_static",
+                    "-DCMAKE_JOB_POOLS=xnotes_native=1",
+                    "-DCMAKE_JOB_POOL_COMPILE=xnotes_native",
+                    "-DCMAKE_JOB_POOL_LINK=xnotes_native",
+                )
             }
         }
     }

@@ -111,26 +111,30 @@ object MarkdownParser {
     /** LaTeX's page breaks, which is how markdown headed for print writes one. */
     private val PAGE_BREAK = Regex("\\s*\\\\(pagebreak|newpage)\\s*")
 
-    private val parser: Parser by lazy {
+    internal val extensions by lazy {
+        listOf(
+            TablesExtension.create(),
+            StrikethroughExtension.builder().requireTwoTildes(true).build(),
+            TaskListItemsExtension.create(), FootnotesExtension.create(),
+            YamlFrontMatterExtension.create(), AlertsExtension.create(),
+        )
+    }
+
+    private val parser: Parser by lazy { buildParser(IncludeSourceSpans.BLOCKS) }
+    private val sourceParser: Parser by lazy { buildParser(IncludeSourceSpans.BLOCKS_AND_INLINES) }
+
+    /** The source editor reads the same dialect without flattening it into TextFlow. */
+    internal fun sourceTree(text: String): Node = sourceParser.parse(text)
+
+    private fun buildParser(spans: IncludeSourceSpans): Parser =
         Parser.builder()
-            .extensions(
-                listOf(
-                    TablesExtension.create(),
-                    // A lone tilde is prose ("~5 min"), not strikethrough.
-                    StrikethroughExtension.builder().requireTwoTildes(true).build(),
-                    TaskListItemsExtension.create(),
-                    FootnotesExtension.create(),
-                    YamlFrontMatterExtension.create(),
-                    AlertsExtension.create(),
-                ),
-            )
+            .extensions(extensions)
             .customDelimiterProcessor(MarkDelimiters())
             .customBlockParserFactory(MathBlockFactory())
             .customInlineContentParserFactory(DollarMathFactory())
             .customInlineContentParserFactory(BracketMathFactory())
-            .includeSourceSpans(IncludeSourceSpans.BLOCKS)
+            .includeSourceSpans(spans)
             .build()
-    }
 
     /**
      * Parse [text] into flow paragraphs; pipe tables take [tableStyle] (with its header row on),
@@ -475,7 +479,7 @@ object MarkdownParser {
 
     // --- ==highlight== ---
 
-    private class Marked : CustomNode()
+    internal class Marked : CustomNode()
 
     /** `==text==`, Obsidian's and many editors' highlight, as a delimiter run like `~~`. */
     private class MarkDelimiters : DelimiterProcessor {
@@ -498,11 +502,12 @@ object MarkdownParser {
     // --- maths ---
 
     /** A formula met inline: its LaTeX, and whether it was written in display form. */
-    private class MathInline(val latex: String, val display: Boolean) : CustomNode()
+    internal class MathInline(val latex: String, val display: Boolean, val source: String = latex) : CustomNode()
 
     /** A display equation written as a block: `$$` or `\[` on a line of its own, closed the same way. */
-    private class MathBlock : CustomBlock() {
+    internal class MathBlock : CustomBlock() {
         var latex = ""
+        var source = ""
     }
 
     private class MathBlockParser(private val close: Regex) : AbstractBlockParser() {
@@ -528,6 +533,7 @@ object MarkdownParser {
 
         // Everything between is one formula, so its lines join rather than standing apart.
         override fun closeBlock() {
+            block.source = body.joinToString("\n")
             block.latex = body.joinToString(" ") { it.trim() }.trim()
         }
     }
@@ -572,6 +578,11 @@ object MarkdownParser {
             while (true) {
                 val c = sc.peek()
                 if (c == Scanner.END) return ParsedInline.none()
+                if (c == '\\') {
+                    body.append(c); sc.next()
+                    if (sc.peek() != Scanner.END) { body.append(sc.peek()); sc.next() }
+                    continue
+                }
                 if (c == '$') {
                     if (display) {
                         if (sc.next("$$")) break
@@ -587,7 +598,7 @@ object MarkdownParser {
             }
             val s = body.toString()
             if (s.isBlank() || s.first().isWhitespace() != s.last().isWhitespace()) return ParsedInline.none()
-            return ParsedInline.of(MathInline(s.replace('\n', ' ').trim(), display), sc.position())
+            return ParsedInline.of(MathInline(s.replace('\n', ' ').trim(), display, s), sc.position())
         }
     }
 
@@ -615,9 +626,10 @@ object MarkdownParser {
                 body.append(c)
                 sc.next()
             }
-            val s = body.toString().replace('\n', ' ').trim()
+            val source = body.toString()
+            val s = source.replace('\n', ' ').trim()
             if (s.isEmpty()) return ParsedInline.none()
-            return ParsedInline.of(MathInline(s, display), sc.position())
+            return ParsedInline.of(MathInline(s, display, source), sc.position())
         }
     }
 }

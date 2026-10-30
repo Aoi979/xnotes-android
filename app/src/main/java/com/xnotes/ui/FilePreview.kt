@@ -81,6 +81,7 @@ internal fun FilePreview(
     val kind = b.kind(e)
     val pages = b.pages(e)
     val landscape = kind == EntryKind.CANVAS
+    var markdownStyle by remember { mutableStateOf(false) }
     Column(modifier.verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             val stacked = maxWidth < 440.dp
@@ -111,6 +112,7 @@ internal fun FilePreview(
                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         ExplorerIcon(XnotesIcons.share, stringResource(R.string.share), palette.textDim.toComposeColor(), onClick = actions.share)
                         ExplorerIcon(XnotesIcons.pdfFile, stringResource(R.string.export_pdf), palette.textDim.toComposeColor(), onClick = actions.exportPdf)
+                        if (kind == EntryKind.MARKDOWN) ExplorerIcon(XnotesIcons.sliders, stringResource(R.string.md_style_title), palette.textDim.toComposeColor()) { markdownStyle = true }
                         var colors by remember { mutableStateOf(false) }
                         Box {
                             ExplorerIcon(XnotesIcons.palette, stringResource(R.string.colour_code), palette.textDim.toComposeColor()) { colors = true }
@@ -151,6 +153,7 @@ internal fun FilePreview(
             }
         }
     }
+    if (markdownStyle) MarkdownStyleSheet(b.editor.preferences.markdownStyle, onDismiss = { markdownStyle = false }, onApply = b.editor::setMarkdownStyle)
 }
 
 private const val PREVIEW_PAGES = 12

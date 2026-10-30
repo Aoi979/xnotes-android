@@ -177,7 +177,9 @@ data class BrowseEntry(
 class TreeFiles(val files: List<BrowseEntry>, val folderNames: Map<String, String>)
 
 /** The document an export of [picked] writes as a plain PDF; null when it takes a zip, for several items or any folder. */
-fun lonePdf(picked: List<BrowseEntry>): BrowseEntry? = picked.singleOrNull()?.takeIf { !it.isDir }
+fun lonePdf(picked: List<BrowseEntry>): BrowseEntry? = picked.singleOrNull()?.takeIf {
+    !it.isDir && DocumentKind.ofName(it.name)?.canExportPdf != false
+}
 
 /**
  * A deleted note, canvas or folder waiting in Trash. [entry] is the item where it now lies; [path] names the
@@ -436,6 +438,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     private val sessionDir = java.io.File(appContext.filesDir, if (pane == Pane.PRIMARY) "session" else "session-b")
     private val session = com.xnotes.platform.SessionStore(sessionDir, codec, pdfDir, imageDir)
     private val canvasSession = com.xnotes.platform.CanvasSessionStore(sessionDir, canvasCodec, imageDir)
+    private val markdownStore = com.xnotes.platform.MarkdownStore(appContext, sessionDir)
     private val viewStates = com.xnotes.platform.ViewStateStore(com.xnotes.platform.JsonStore.viewStates(appContext))
     private var lastSessionContentVersion = -1
     private var sessionLoaded = false
@@ -689,6 +692,138 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     var canvasOpen by mutableStateOf(false)
         private set
 
+    var markdown by mutableStateOf<MarkdownSession?>(null)
+        private set
+
+    val documentKind: DocumentKind get() = when {
+        markdown != null -> DocumentKind.MARKDOWN
+        canvasOpen -> DocumentKind.CANVAS
+        else -> DocumentKind.NOTE
+    }
+
+    /** Capture appearance once before handing Markdown work to a background dispatcher. */
+    fun markdownRenderer(style: com.xnotes.settings.MarkdownStyle = preferences.markdownStyle,
+                         pagePalette: com.xnotes.ui.theme.Palette = palette) = com.xnotes.platform.MarkdownRenderer(
+        style, pagePalette, highlighter, customCodeTheme,
+        com.xnotes.core.text.MarkdownScienceLabels(appContext.getString(com.xnotes.R.string.md_formula_error),
+            appContext.getString(com.xnotes.R.string.md_diagram_source), appContext.getString(com.xnotes.R.string.md_diagram_error)))
+
+    fun setMarkdownStyle(style: com.xnotes.settings.MarkdownStyle) {
+        settings = settings.copy(prefs = settings.prefs.copy(markdownStyle = style.clamped()))
+        for (editor in listOfNotNull(this, sibling)) { editor.refreshThumbnailTheme(); editor.prefsVersion++ }
+        settingsRepo.save(settings)
+    }
+
+    fun setMarkdownPdfStyle(style: com.xnotes.settings.MarkdownPdfStyle) {
+        settings = settings.copy(prefs = settings.prefs.copy(markdownPdfStyle = style.clamped()))
+        for (editor in listOfNotNull(this, sibling)) editor.prefsVersion++
+        settingsRepo.save(settings)
+    }
+
+    /** The library can export a closed Markdown file without opening or converting it. */
+    suspend fun printMarkdownFile(uri: String, pdf: com.xnotes.settings.MarkdownPdfStyle, onReady: (Boolean) -> Unit) {
+        val renderer = markdownRenderer()
+        try {
+            val snapshot = withContext(Dispatchers.IO) {
+                val text = com.xnotes.core.text.MarkdownSource.decode(markdownStore.read(uri)).text
+                val parent = markdown?.takeIf { it.uri == uri }?.resourceParent ?: markdownStore.parent(uri, browseRoot)
+                    ?: markdownStore.parent(uri, com.xnotes.platform.AppStorageDocumentsProvider.treeUri(appContext).toString())
+                Triple(text, parent, queryDisplayName(android.net.Uri.parse(uri)) ?: "Markdown.md")
+            }
+            val page = withContext(Dispatchers.Default) {
+                renderer.printPage(snapshot.first, pdf)
+            }
+            withContext(Dispatchers.Main) {
+                com.xnotes.platform.MarkdownPrint.start(viewContext, markdownStore, snapshot.second, page,
+                    DocumentKind.stripSuffix(snapshot.third), pdf, onReady)
+            }
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            withContext(Dispatchers.Main) { onReady(false) }
+        }
+    }
+
+    private var markdownThumbSnapshot: Pair<String?, String>? = null
+    private fun refreshMarkdown() {
+        val source = markdown ?: return
+        title = DocumentKind.stripSuffix(source.name)
+        dirty = source.dirty
+        if (!source.dirty && source.uri != null) {
+            val stamp = source.uri to source.input.text.toString()
+            if (markdownThumbSnapshot != stamp) {
+                markdownThumbSnapshot = stamp
+                invalidateThumb(source.uri!!)
+                thumbnailVersion++
+            }
+        }
+    }
+
+    private fun installMarkdown(draft: com.xnotes.platform.MarkdownStore.Draft, writable: Boolean,
+                                problem: com.xnotes.platform.MarkdownStore.Problem? = null) {
+        markdown = MarkdownSession(markdownStore, draft, writable, problem, ::refreshMarkdown)
+        canvasOpen = false
+        noteOpen = true
+        refreshMarkdown()
+    }
+
+    /** Settle the outgoing model before installing a different kind in this pane. */
+    private suspend fun prepareForOpen(): Boolean {
+        markdown?.let { source ->
+            if (noteOpen && !source.saveNow()) return false
+            source.dispose(clearDraft = true)
+            markdown = null
+            return true
+        }
+        if (canvasOpen) {
+            infinite.commitText()
+            kotlinx.coroutines.suspendCancellableCoroutine<Unit> { c ->
+                flushCanvasThen(showOverlay = false) {
+                    canvasAutosaveUri = null
+                    canvasOpen = false
+                    if (c.isActive) c.resume(Unit) { _, _, _ -> }
+                }
+            }
+        } else {
+            commitText()
+            flowText.endSession()
+            if (noteOpen) saveViewState()
+            kotlinx.coroutines.suspendCancellableCoroutine<Unit> { c ->
+                flushThen(showOverlay = false) {
+                    autosaveUri = null
+                    if (c.isActive) c.resume(Unit) { _, _, _ -> }
+                }
+            }
+        }
+        return true
+    }
+
+    suspend fun openMarkdownAsync(uri: String, name: String?): Boolean {
+        if (opening) return false
+        opening = true
+        openCancelled.set(false)
+        try {
+            val loaded = withContext(Dispatchers.IO) { markdownStore.open(uri) }
+            if (openCancelled.get() || !prepareForOpen()) return false
+            val parent = withContext(Dispatchers.IO) {
+                markdownStore.parent(uri, browseRoot) ?: markdownStore.parent(uri, com.xnotes.platform.AppStorageDocumentsProvider.treeUri(appContext).toString())
+            }
+            withContext(Dispatchers.IO) { session.clear(); canvasSession.clear() }
+            installMarkdown(com.xnotes.platform.MarkdownStore.Draft(uri, name ?: "Note.md", loaded.source,
+                loaded.digest, false, 0, 0, false, parent?.toString()), loaded.writable)
+            rememberOpened(uri, name)
+            markdown?.requestSave() // install the recovery snapshot, even before the first edit
+            return true
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            message = appContext.getString(when ((e as? com.xnotes.platform.MarkdownStore.Failure)?.problem) {
+                com.xnotes.platform.MarkdownStore.Problem.UTF8 -> R.string.md_invalid_utf8
+                com.xnotes.platform.MarkdownStore.Problem.TOO_LARGE -> R.string.md_too_large
+                else -> R.string.md_read_failed
+            })
+            return false
+        } finally { opening = false }
+    }
+
     private var infiniteOrNull: InfiniteEditor? = null
 
     /** The infinite canvas's orchestrator, built on first use. It hangs off this editor rather
@@ -765,6 +900,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 }?.also { it.created = settleCreated(uri, it.created) }
             }.getOrNull()
         } ?: return false
+        if (!prepareForOpen()) return false
         openCanvasDocument(doc, uri, name)
         rememberOpened(uri, name)
         return true
@@ -916,7 +1052,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     private val pageClipboard = mutableStateListOf<Page>()
 
     /** The current document's storage location (a SAF content URI string), or null. */
-    val currentUri: String? get() = state.document.path
+    val currentUri: String? get() = markdown?.uri ?: if (canvasOpen) infiniteOrNull?.document?.path else state.document.path
 
     val bookmarks: List<Bookmark> get() = state.document.bookmarks.toList()
 
@@ -2659,7 +2795,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     /** View defaults also change closed notes' previews, including cached files on disk. */
     private fun refreshThumbnailTheme() {
-        val theme = "$palette|${state.pageColorOverride}|$viewDefaults"
+        val theme = "$palette|${state.pageColorOverride}|$viewDefaults|${settings.prefs.markdownStyle}"
         if (thumbnailTheme == theme) return
         thumbnailTheme = theme
         thumbnailGeneration = thumbCache.useTheme(theme)
@@ -2702,6 +2838,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     fun setFullscreenPref(v: Boolean) {
         fullscreen = v
         settings = settings.copy(prefs = settings.prefs.copy(startFullscreen = v))
+        for (editor in listOfNotNull(this, sibling)) editor.prefsVersion++
         settingsRepo.save(settings)
     }
 
@@ -2801,12 +2938,13 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 renderScale = renderScale,
             )
         }
-        if (noteOpen) saveViewState() // remember this folder note's view for next time
+        if (noteOpen && markdown == null) saveViewState() // remember this folder note's view for next time
         settingsRepo.save(settings)
         // The note + session writes are heavy for a big note; run them off the main thread so pressing
         // Home never freezes the UI. The process survives to finish them; the debounced autosave during
         // editing bounds any loss on an immediate hard kill.
-        flushThen(showOverlay = false) {}
+        if (markdown == null) flushThen(showOverlay = false) {}
+        else if (noteOpen) markdown?.requestSave()
         flushCanvasAutosave()
         saveSession()
         saveCanvasSession()
@@ -2827,7 +2965,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      *  reopens this note where the user left off, unsaved edits included. */
     private fun saveSession() {
         if (!sessionLoaded) return // don't overwrite the saved note before restore has applied
-        if (!noteOpen || canvasOpen) { session.clear(); return } // nothing paged on top: wipe any stale session
+        if (!noteOpen || canvasOpen || markdown != null) { session.clear(); return } // nothing paged on top: wipe any stale session
         val contentChanged = contentVersion != lastSessionContentVersion
         lastSessionContentVersion = contentVersion
         // Snapshot on the main thread, then write the session off-thread, so saving a big note's
@@ -2851,6 +2989,25 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      *  main thread; the apply runs on the caller's (main) dispatcher. A no-op when
      *  there is no saved session. Drives the launch loader, so it's safe to await. */
     suspend fun restoreSession() {
+        val recovered = withContext(Dispatchers.IO) {
+            markdownStore.loadDraft()?.let { draft ->
+                val disk = draft.uri?.let { runCatching { markdownStore.open(it) }.getOrNull() }
+                val problem = when {
+                    !draft.source.editable -> com.xnotes.platform.MarkdownStore.Problem.TOO_LARGE
+                    disk == null -> com.xnotes.platform.MarkdownStore.Problem.READ
+                    draft.dirty && draft.baseline != disk.digest -> com.xnotes.platform.MarkdownStore.Problem.CONFLICT
+                    else -> null
+                }
+                Triple(if (!draft.dirty && disk != null) draft.copy(source = disk.source, baseline = disk.digest) else draft,
+                    disk?.writable == true, problem)
+            }
+        }
+        if (recovered != null) {
+            withContext(Dispatchers.IO) { session.clear(); canvasSession.clear() }
+            installMarkdown(recovered.first, recovered.second, recovered.third)
+            sessionLoaded = true
+            return
+        }
         // A canvas was open last time: it takes precedence, since only one document is ever on top.
         val canvasDoc = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             if (canvasSession.exists()) canvasSession.load() else null
@@ -3122,6 +3279,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     }
 
     private fun refreshContent() {
+        if (markdown != null && noteOpen) { refreshMarkdown(); return }
         republishFlowIfStale()
         canUndo = history.canUndo
         canRedo = history.canRedo
@@ -3484,6 +3642,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             doc.path = uri
             doc.displayName = name
             doc.dirty = false
+            if (!prepareForOpen()) return
             replaceDocument(doc)
             state.openFileBytes = fileBytes
             state.lastSaveBytes = fileBytes // the on-disk size, until the first autosave rewrites it
@@ -3531,6 +3690,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      * a cloud provider is an untimed binder call into that provider's process.
      */
     fun saveToThen(uri: String, onDone: (Boolean) -> Unit) {
+        markdown?.let { source -> source.saveCopy(uri, source.name, onDone); return }
         noteDebounceJob?.cancel() // this write supersedes a pending debounce
         val doc = state.document
         val startNs = System.nanoTime()
@@ -3753,7 +3913,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     /** The square tile for the document at [uri], whichever kind it is. */
     suspend fun tileThumbnail(uri: String, name: String): ImageBitmap? =
-        if (com.xnotes.core.util.DocumentKind.ofName(name) == com.xnotes.core.util.DocumentKind.CANVAS) {
+        if (DocumentKind.ofName(name) == DocumentKind.MARKDOWN) {
+            markdownThumbnail(uri, whole = false)
+        } else if (com.xnotes.core.util.DocumentKind.ofName(name) == com.xnotes.core.util.DocumentKind.CANVAS) {
             canvasTileThumbnail(uri)
         } else {
             noteTileThumbnail(uri)
@@ -3802,6 +3964,36 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     /** The key a document's whole-page thumbnail is cached under, beside its square tile's. */
     private fun pageThumbKey(uri: String): String = "$uri#page"
 
+    /** Markdown shares the bounded note cache, but its content digest also detects providers
+     * that do not advance their timestamps after an external edit. One HTML page supplies both
+     * the cropped tile and the whole-page preview, with the same styles as the reader. */
+    private suspend fun markdownThumbnail(uri: String, whole: Boolean): ImageBitmap? {
+        val generation = thumbnailGeneration
+        val style = preferences.markdownStyle
+        val renderedPalette = palette
+        val renderer = markdownRenderer(style, renderedPalette)
+        return withContext(thumbDispatcher) {
+            delay(150)
+            if (!isActive || !isCurrentThumbnail(generation)) return@withContext null
+            val bytes = runCatching { markdownStore.read(uri) }.getOrNull() ?: return@withContext null
+            val source = runCatching { com.xnotes.core.text.MarkdownSource.decode(bytes).text }.getOrNull() ?: return@withContext null
+            val parent = markdown?.takeIf { it.uri == uri }?.resourceParent ?: markdownStore.parent(uri, browseRoot)
+                ?: markdownStore.parent(uri, com.xnotes.platform.AppStorageDocumentsProvider.treeUri(appContext).toString())
+            val key = "$uri#markdown:science-1:${com.xnotes.core.text.MarkdownSource.digest(bytes)}:$parent"
+            val bitmap = thumbCache.load(key, generation) ?: run {
+                // The first viewport never needs the rest of a long document's AST or code spans.
+                val body = renderer.render(source.take(16 * 1024)).html
+                val html = com.xnotes.platform.MarkdownPage.html(body, style, renderedPalette)
+                com.xnotes.platform.MarkdownWeb.thumbnail(viewContext, markdownStore, parent, html, tilePx, (tilePx * 1.414).roundToInt())
+                    ?.also { thumbCache.store(key, it, generation) }
+            } ?: return@withContext null
+            if (!isActive || !isCurrentThumbnail(generation)) { bitmap.recycle(); return@withContext null }
+            val result = if (whole) bitmap else android.graphics.Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, minOf(bitmap.width, bitmap.height))
+            if (result !== bitmap) bitmap.recycle()
+            publishThumbnail(if (whole) pageThumbKey(uri) else uri, result, generation)
+        }
+    }
+
     /** An already-rendered whole-page thumbnail for [uri], to seed a tile instantly. */
     fun cachedPageThumb(uri: String): ImageBitmap? = synchronized(noteThumbs) { noteThumbs.get(pageThumbKey(uri)) }
 
@@ -3811,6 +4003,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      * with them when the document changes.
      */
     suspend fun pageThumbnail(uri: String, name: String): ImageBitmap? {
+        if (DocumentKind.ofName(name) == DocumentKind.MARKDOWN) return markdownThumbnail(uri, whole = true)
         val generation = thumbnailGeneration
         val key = pageThumbKey(uri)
         synchronized(noteThumbs) { noteThumbs.get(key)?.let { return it } }
@@ -3848,7 +4041,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     /** The first [max] pages of the note at [uri], each [heightPx] tall, for a preview's page strip; empty for a canvas. */
     suspend fun pageStrip(uri: String, name: String, max: Int, heightPx: Int): List<ImageBitmap> {
         val generation = thumbnailGeneration
-        if (DocumentKind.ofName(name) == DocumentKind.CANVAS) return emptyList()
+        if (DocumentKind.ofName(name) != DocumentKind.NOTE) return emptyList()
         return withContext(thumbDispatcher) {
             val doc = runCatching {
                 appContext.contentResolver.openInputStream(android.net.Uri.parse(uri))?.use { codec.read(it, pdfDir, imageDir) }
@@ -4191,10 +4384,12 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     private fun createNoteFile(treeUri: String, parentDocId: String, name: String, write: (OutputStream) -> Unit): String? {
         val parent = android.provider.DocumentsContract.buildDocumentUriUsingTree(android.net.Uri.parse(treeUri), parentDocId)
         val uri = runCatching {
-            android.provider.DocumentsContract.createDocument(appContext.contentResolver, parent, "application/octet-stream", name)
+            val mime = if (DocumentKind.ofName(name) == DocumentKind.MARKDOWN) "text/markdown" else "application/octet-stream"
+            android.provider.DocumentsContract.createDocument(appContext.contentResolver, parent, mime, name)
         }.getOrNull() ?: return null
         return runCatching {
-            appContext.contentResolver.openOutputStream(uri, "wt")?.use { write(it) }
+            val output = appContext.contentResolver.openOutputStream(uri, "wt") ?: error("No output stream")
+            output.use { write(it) }
             uri.toString()
         }.getOrElse {
             runCatching { android.provider.DocumentsContract.deleteDocument(appContext.contentResolver, uri) }
@@ -4208,6 +4403,20 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         return createNoteFile(treeUri, parentDocId, name) {
             canvasCodec.write(com.xnotes.core.infinite.InfiniteDocument(created = System.currentTimeMillis()), it)
         }
+    }
+
+    /** A plain file in the same SAF library as notebooks; no bundle or generated front matter. */
+    fun createMarkdownFile(treeUri: String, parentDocId: String, rawName: String, bytes: ByteArray = ByteArray(0)): String? {
+        val name = uniqueDocumentName(treeUri, parentDocId, rawName, DocumentKind.MARKDOWN)
+        return createNoteFile(treeUri, parentDocId, name) { it.write(bytes) }
+    }
+
+    suspend fun copyMarkdownToLibrary(uri: String, name: String?): String? = withContext(Dispatchers.IO) {
+        val tree = com.xnotes.platform.AppStorageDocumentsProvider.treeUri(appContext)
+        val bytes = runCatching { markdownStore.read(uri).also { com.xnotes.core.text.MarkdownSource.decode(it) } }.getOrNull()
+            ?: return@withContext null
+        createMarkdownFile(tree.toString(), android.provider.DocumentsContract.getTreeDocumentId(tree),
+            DocumentKind.stripSuffix(name ?: "Note"), bytes)
     }
 
     /** Creates a blank `.xnote` under [parentDocId]; returns its URI, or null. IO — call off-thread. */
@@ -5492,7 +5701,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val kind = DocumentKind.ofName(entry.name) ?: return null
         val key = documentKey(entry.documentUri)
         docMeta.get(key, entry.modified)?.let { return it }
-        val meta = if (kind == DocumentKind.CANVAS) {
+        val meta = if (kind == DocumentKind.MARKDOWN) {
+            com.xnotes.platform.DocMetaStore.Meta(0, false, entry.modified)
+        } else if (kind == DocumentKind.CANVAS) {
             val peek = peekFile(entry.documentUri, { canvasCodec.peek(it) }, { canvasCodec.peek(it) }) ?: return null
             peek.created?.let { createdStore.put(key, it) }
             // A canvas has no pages or PDF; the entry just marks it read at this modified time.
@@ -6761,6 +6972,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     var keyActions = KeyActions()
 
     fun handleKeyDown(e: android.view.KeyEvent): Boolean {
+        if (markdown != null) return false // the source field owns text shortcuts and IME composition
         // A canvas is on top: it owns the keyboard, and understands only its own shortcuts.
         if (canvasOpen) return infinite.handleKeyDown(e)
         // A live flow caret session owns the keyboard first (Ctrl+B means bold here).
@@ -8125,6 +8337,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      *  controller's held latch, and the vendor double-tap/click keycodes to their gesture handlers.
      *  Returns true when consumed, so the host swallows the key. */
     fun onStylusButtonKey(e: android.view.KeyEvent): Boolean {
+        if (markdown != null) return false
         if (e.keyCode == penDoubleTapKeycode) return onPenDoubleTapKey(e)
         if (e.keyCode in penButtonTapKeycodes) return onPenButtonTapKey(e)
         val down = when (e.action) {
@@ -8185,6 +8398,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     }
 
     fun newNote() {
+        markdown?.dispose(clearDraft = true)
+        markdown = null
+        canvasOpen = false
         AudioRecording.stopFor(this) // closing the note places its recording
         AudioPlayback.closeFor(this)
         saveViewState()
@@ -8292,6 +8508,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     /** Called after a pane exits, or when the activity's composition is disposed. Saves may finish. */
     fun releaseUiResources() {
+        markdown?.dispose()
         com.xnotes.platform.MathRendering.removeListener(mathLanded)
         controller.resetGestureState()
         closeSearchSession()
@@ -8314,6 +8531,12 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      *  [noteOpen] so the editor is removed from the stack. The document stays as an inert buffer. */
     fun goHome() {
         if (!noteOpen) return
+        markdown?.let { source ->
+            source.requestSave { ok ->
+                if (ok && markdown === source) { source.dispose(clearDraft = true); noteOpen = false }
+            }
+            return
+        }
         // Closing the note places a recording still going, before the note is saved.
         AudioRecording.stopFor(this)
         infiniteOrNull?.let { AudioRecording.stopFor(it) }

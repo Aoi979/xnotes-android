@@ -34,6 +34,10 @@ object LatexInternals {
     fun parse(latex: String): List<LatexNode> =
         IncrementalLatexParser().apply { append(latex) }.getCurrentDocument().children
 
+    /** The notebook paints unknown commands red; Markdown instead keeps their readable source. */
+    fun hasUnknownCommands(latex: String): Boolean =
+        parse(latex).any { root -> root.fold(false) { found, n -> found || n is LatexNode.Command } }
+
     /** The font metrics every [layout] shares; the library builds a fresh one per formula otherwise. */
     internal fun metrics(fonts: LatexFontFamilies): Any = MathFontProviderFactory.create(fonts)
 
